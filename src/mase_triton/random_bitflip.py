@@ -9,7 +9,20 @@ from .dtype import TORCH_DTYPE_TO_TRITON
 from .utils.constants import PACKAGE_NAME
 
 
-def calculate_flip_probability(prob_halves) -> float:
+def calculate_flip_probability(prob_halves: int) -> float:
+    """Calculate the flip probability from the number of halves = 0.5^prob_halves,
+    given current flip kernel consists of bitwise-or only (refer to _cta_random_flip).
+
+    Parameters
+    ----------
+    prob_halves : int
+        the number of halves = 0.5^prob_halves, should be a positive integer.
+
+    Returns
+    -------
+    float
+        the flip probability
+    """
     return 0.5**prob_halves
 
 
@@ -61,7 +74,7 @@ def _create_sign_exp_mask(INPUT_DTYPE: tl.constexpr):
 
 
 @triton.jit
-def create_frac_mask(INPUT_DTYPE: tl.constexpr):
+def _create_frac_mask(INPUT_DTYPE: tl.constexpr):
     if INPUT_DTYPE == tl.float16:
         frac_mask = 0x3FF  # bin = 0000_0011_1111_1111
         frac_mask = tl.full((1,), frac_mask, dtype=tl.uint16)
@@ -128,7 +141,7 @@ def _random_bitflip_forward_kernel(
     if not SKIP_FRAC_FLIP:
         bits_to_flip = ~tl.zeros(x.shape, dtype=BIN_DTYPE)  # all bits set to 1
         bits_to_flip = _cta_random_flip(bits_to_flip, offsets, frac_halves, seed_frac, BIN_DTYPE)
-        frac_mask = create_frac_mask(INPUT_DTYPE)
+        frac_mask = _create_frac_mask(INPUT_DTYPE)
         x = x ^ (bits_to_flip & frac_mask)
 
     x = x.to(INPUT_DTYPE, bitcast=True)
@@ -290,7 +303,7 @@ def _random_bitflip_zero_outed_backward_kernel(
     if not SKIP_FRAC_FLIP:
         bits_to_flip = ~tl.zeros(x.shape, dtype=BIN_DTYPE)  # all bits set to 1
         bits_to_flip = _cta_random_flip(bits_to_flip, offsets, frac_halves, seed_frac, BIN_DTYPE)
-        frac_mask = create_frac_mask(INPUT_DTYPE)
+        frac_mask = _create_frac_mask(INPUT_DTYPE)
         x = x ^ (bits_to_flip & frac_mask)
 
     x = x.to(INPUT_DTYPE, bitcast=True)
@@ -399,6 +412,16 @@ def _random_bitflip_setup_context(ctx, inputs, output):
 
 
 random_bitflip_fn.register_autograd(_random_bitflip_backward_wrapper, setup_context=_random_bitflip_setup_context)
+
+
+def _random_bitflip_forward_cpu():
+    # TODO: implement the CPU version of random bit flip using numpy
+    ...
+
+
+def _random_bitflip_backward_cpu():
+    # TODO: implement the CPU version of random bit flip backward using numpy
+    ...
 
 
 class RandomBitFlip(torch.nn.Module):
