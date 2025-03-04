@@ -161,6 +161,33 @@ def random_bitflip_fn(
     zero_out_threshold: float | None,
     train: bool,
 ) -> tuple[Tensor, int, int]:
+    """Forward pass of random bit flip operation.
+
+    Parameters
+    ----------
+    x : Tensor
+        input tensor
+    exp_halves : int | None
+        the random bit flip probability for sign-exponent bits = 0.5^exp_halves
+    frac_halves : int | None
+        the random bit flip probability for fraction bits = 0.5^frac_halves
+    seed_exp : int
+        the random seed for sign-exp bits. Note the same seed generates the same random bits,
+        thus the seed needs to be updated after each call.
+    seed_frac : int
+        the random seed for sign-exp bits. Note the same seed generates the same random bits,
+        thus the seed needs to be updated after each call.
+    zero_out_threshold : float | None
+        if not None, zero out the bits whose absolute value is less than this threshold (including NaN).
+        if None, no zero out operation is performed.
+    train : bool
+        whether the operation is performed in training mode. If False, no random bit flip is performed.
+
+    Returns
+    -------
+    tuple[Tensor, int, int]
+        the output tensor, the updated seed_exp, and the updated seed_frac
+    """
     assert x.dtype in BIT_FLIP_DTYPE_MAP
     skip_exp_flip = exp_halves is None
     skip_frac_flip = frac_halves is None
