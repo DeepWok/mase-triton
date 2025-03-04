@@ -1,0 +1,54 @@
+requires = ["tox>=4.24.1"]
+env_list= ["py3.11","dev"]
+
+[env_run_base]
+description = "Run the tests with pytest under {env_name}"
+package = "wheel"
+# wheel_build_env = ".pkg"
+dependency_groups = ["base"]
+commands = [
+    [
+        "pytest",
+        { replace = "posargs", extend = true}
+    ]
+]
+
+[env_pkg_base]
+description = "Package the project into a wheel"
+package = "wheel"
+dependency_groups = ["basic", "build"]
+commands = [
+    [
+        "python",
+        "-m",
+        "build",
+        "--wheel",
+    ]
+]
+
+[env.dev]
+description = "Development environment"
+package = "editable"
+dependency_groups = ["dev"]
+commands = []
+
+[env.build]
+description = "Package the project into a wheel"
+package = "wheel"
+skip_install = true
+dependency_groups = ["build"]
+commands = [
+    [
+        "python",
+        "-m",
+        "build",
+        "--wheel",
+    ],
+]
+
+
+[pytest]
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
