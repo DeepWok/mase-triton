@@ -5,3 +5,9 @@
 [project]
     name="mase-triton"
     version="0.0.1"
+    authors=[{ name="Cheng Zhang", email="chengzhang98@outlook.com" }]
+    maintainers=[{ name="Cheng Zhang", email="chengzhang98@outlook.com" }]
+    description="Triton kernels for MASE"
+    readme="README.md"
+    [project.urls]
+        Repository="https://github.com/DeepWok/mase-triton.git"
