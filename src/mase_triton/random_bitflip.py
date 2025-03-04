@@ -402,6 +402,27 @@ random_bitflip_fn.register_autograd(_random_bitflip_backward_wrapper, setup_cont
 
 
 class RandomBitFlip(torch.nn.Module):
+    """Random bit flip layer, which flips the sign-exponent and fraction bits with given probabilities.
+    If zero_out_threshold is not None, the flipped element whose absolute value is less than this threshold are zeroed out,
+    the gradient of these zeroed out elements are also zeroed out.
+
+    Parameters
+    ----------
+    p_exp : float | None
+        the random bit flip probability for sign-exponent bits = 0.5^find_nearest_prob_n_halves(p_exp)
+    p_frac : float | None
+        the random bit flip probability for fraction bits = 0.5^find_nearest_prob_n_halves(p_frac)
+    zero_out_threshold : float | None
+        if not None, zero out the bits whose absolute value is less than this threshold (including NaN).
+        if None, no zero out operation is performed.
+    seed_exp : int
+        the initial random seed for sign-exp bits. Note the same seed generates the same random bits,
+        thus the seed is updated after each call.
+    seed_frac : int
+        the random seed for sign-exp bits. Note the same seed generates the same random bits,
+        thus the seed is updated after each call.
+    """
+
     def __init__(
         self,
         p_exp: float | None,
