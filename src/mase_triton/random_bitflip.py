@@ -1,5 +1,4 @@
 import math
-from typing import Optional, Union
 
 import torch
 from torch import Tensor
@@ -10,8 +9,8 @@ from .utils.constants import PACKAGE_NAME
 
 
 def calculate_flip_probability(prob_halves: int) -> float:
-    """Calculate the flip probability from the number of halves = 0.5^prob_halves,
-    given current flip kernel consists of bitwise-or only (refer to _cta_random_flip).
+    """Calculate the flip probability from the number of halves, prob = 0.5^prob_halves.
+    Note that current flip kernel uses bitwise-or only (refer to _cta_random_flip).
 
     Parameters
     ----------
@@ -27,6 +26,18 @@ def calculate_flip_probability(prob_halves: int) -> float:
 
 
 def find_nearest_prob_n_halves(prob: float) -> int:
+    """
+    Calculate the smallest integer n such that (1/2)^n is less than or equal to the given probability.
+
+    This function computes the smallest number of halvings (n) required for the probability to be less than or equal to the given probability.
+
+    Args:
+        prob (float): The probability value for which to find the nearest number of halvings.
+
+    Returns:
+        int: The smallest integer n such that (1/2)^n <= prob.
+    """
+
     return math.ceil(math.log2(1 / prob))
 
 
