@@ -3,7 +3,7 @@ import logging
 
 import colorlog
 
-from .utils.constants import PACKAGE_NAME
+from .about import PACKAGE_NAME
 
 root_logger = logging.getLogger(PACKAGE_NAME)
 

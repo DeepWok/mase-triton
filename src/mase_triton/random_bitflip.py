@@ -5,7 +5,7 @@ from torch import Tensor
 import triton
 import triton.language as tl
 from .dtype import TORCH_DTYPE_TO_TRITON
-from .utils.constants import PACKAGE_NAME
+from .about import PACKAGE_NAME
 
 
 def calculate_flip_probability(prob_halves: int) -> float:
