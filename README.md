@@ -2,7 +2,23 @@
 
 ## Install
 
+### PyPI
+
 `🚧 TODO`
+
+### Build from Source
+
+1. Install tox
+    ```bash
+    pip install tox
+    ```
+2. Build & Install
+    ```bash
+    tox -e build
+    ```
+    Then the wheel file will be generated in `dist/` folder.
+    You can install it by `pip install path/to/wheel/file.whl`
+
 
 ## Functionality
 - [Random BitFlip](/src/mase_triton/random_bitflip.py)
