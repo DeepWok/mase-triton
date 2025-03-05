@@ -8,7 +8,21 @@ from .about import PACKAGE_NAME
 root_logger = logging.getLogger(PACKAGE_NAME)
 
 _handler = colorlog.StreamHandler()
-_handler.setFormatter(colorlog.ColoredFormatter("%(log_color)s%(levelname)s:%(name)s:%(message)s"))
+_formatter = colorlog.ColoredFormatter(
+    "%(log_color)s%(levelname)-8s%(reset)s %(blue)s%(message)s",
+    datefmt=None,
+    reset=True,
+    log_colors={
+        "DEBUG": "cyan",
+        "INFO": "green",
+        "WARNING": "yellow",
+        "ERROR": "red",
+        "CRITICAL": "red,bg_white",
+    },
+    secondary_log_colors={},
+    style="%",
+)
+_handler.setFormatter(_formatter)
 root_logger.addHandler(_handler)
 
 

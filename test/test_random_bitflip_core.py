@@ -5,8 +5,8 @@ import torch
 from mase_triton.random_bitflip import (
     find_nearest_prob_n_halves,
     random_bitflip_fn,
-    RandomBitFlip,
 )
+from mase_triton.random_bitflip.utils import calculate_bit_mismatch_rate
 from mase_triton.utils.bit_repr import get_binary_repr
 from mase_triton.logging import set_logging_verbosity
 from mase_triton.about import PACKAGE_NAME
@@ -14,11 +14,6 @@ from mase_triton.about import PACKAGE_NAME
 logger = logging.getLogger(f"{PACKAGE_NAME}.test.{__name__}")
 
 DEVICE = "cuda"
-
-
-def _count_matched_bits(a: str, b: str):
-    assert len(a) == len(b)
-    return sum([1 for i in range(len(a)) if a[i] == b[i]])
 
 
 @torch.no_grad()
@@ -34,7 +29,6 @@ def test_random_bitflip_forward_simple():
         seed_exp=seed_exp,
         seed_frac=seed_frac,
         zero_out_threshold=None,
-        train=True,
     )
     logger.info(f"binary x:\n{get_binary_repr(x, splitter='')}")
     logger.info(f"binary out:\n{get_binary_repr(out, splitter='')}")
@@ -45,9 +39,9 @@ def test_random_bitflip_forward_simple():
 def test_random_bitflip_forward_fully_activated():
     input_dtypes = [torch.float32, torch.float16, torch.bfloat16]
     dtype_to_bit_split = {
-        torch.float32: (8, 23),
-        torch.float16: (5, 10),
-        torch.bfloat16: (8, 7),
+        torch.float32: (9, 23),
+        torch.float16: (6, 10),
+        torch.bfloat16: (9, 7),
     }
     s_exp_halves_frac_halves = [(0.5, 0.5), (0.5**4, 0.5**2), (0.5**3.8, 0.5**10)]
     max_tries = 1000
@@ -60,7 +54,7 @@ def test_random_bitflip_forward_fully_activated():
             frac_halves = find_nearest_prob_n_halves(frac_p)
             seed_exp, seed_frac = 0, 0
             logger.info(
-                f"====== input_dtype = {input_dtype}, exp_p = {exp_p}, frac_p = {frac_p}, exp_halves = {exp_halves}, frac_halves = {frac_halves}, train = True ====="
+                f"====== input_dtype = {input_dtype}, exp_p = {exp_p}, frac_p = {frac_p}, exp_halves = {exp_halves}, frac_halves = {frac_halves} ====="
             )
             while True:
                 out, seed_exp, seed_frac = random_bitflip_fn(
@@ -70,39 +64,13 @@ def test_random_bitflip_forward_fully_activated():
                     seed_exp=seed_exp,
                     seed_frac=seed_frac,
                     zero_out_threshold=None,
-                    train=True,
                 )
                 assert out.dtype == input_dtype
                 assert out.shape == x.shape
                 find_bitflip = not torch.equal(x, out)
                 if find_bitflip:
-                    x_bin = get_binary_repr(x, splitter="").tolist()
-                    out_bin = get_binary_repr(out, splitter="").tolist()
-                    first_n_bits = dtype_to_bit_split[input_dtype][0]
-                    last_n_bits = dtype_to_bit_split[input_dtype][1]
-                    x_s_exp_bin = []
-                    x_frac_bin = []
-                    out_s_exp_bin = []
-                    out_frac_bin = []
-                    for i in range(len(x_bin)):
-                        x_s_exp_bin += [el[:first_n_bits] for el in x_bin[i]]
-                        x_frac_bin += [el[-last_n_bits:] for el in x_bin[i]]
-                        out_s_exp_bin += [el[:first_n_bits] for el in out_bin[i]]
-                        out_frac_bin += [el[-last_n_bits:] for el in out_bin[i]]
-                    x_s_exp_bin = "".join(x_s_exp_bin)
-                    x_frac_bin = "".join(x_frac_bin)
-                    out_s_exp_bin = "".join(out_s_exp_bin)
-                    out_frac_bin = "".join(out_frac_bin)
-
-                    s_exp_match_ratio = _count_matched_bits(x_s_exp_bin, out_s_exp_bin)
-                    s_exp_match_ratio /= len(x_s_exp_bin)
-                    s_exp_mismatch_ratio = 1 - s_exp_match_ratio
-                    frac_match_ratio = _count_matched_bits(x_frac_bin, out_frac_bin)
-                    frac_match_ratio /= len(x_frac_bin)
-                    frac_mismatch_ratio = 1 - frac_match_ratio
-                    logger.info(f"Flip found in {cur_try} tries")
-                    logger.info(f"sign_exp mismatch ratio: {s_exp_mismatch_ratio}")
-                    logger.info(f"frac mismatch ratio: {frac_mismatch_ratio}")
+                    mismatch_rate = calculate_bit_mismatch_rate(x, out)
+                    logger.info(f"mismatch_rate: {mismatch_rate}")
                     break
                 cur_try += 1
                 if cur_try >= max_tries:
@@ -124,7 +92,6 @@ def test_random_bitflip_forward_zero_outed():
             seed_exp=seed_exp,
             seed_frac=seed_frac,
             zero_out_threshold=zero_out_threshold,
-            train=True,
         )
         assert torch.all(torch.isfinite(x))
         zero_out_ratio = (out == 0.0).sum() / out.numel()
@@ -151,7 +118,6 @@ def test_random_bitflip_fn_backward():
                 seed_exp=seed_exp,
                 seed_frac=seed_frac,
                 zero_out_threshold=zero_out_threshold,
-                train=True,
             )
 
             loss = torch.sum(out)
@@ -161,40 +127,10 @@ def test_random_bitflip_fn_backward():
         logger.info(f"exp_halves = {exp_halves} passed")
 
 
-def test_random_bitflip_layer():
-    n_passes = 4
-    p_exp = 0.5**4
-    p_frac = 0.5**5
-    zero_out_threshold = 2
-    seed_exp, seed_frac = 1, 1
-    bitflip = RandomBitFlip(
-        p_exp=p_exp,
-        p_frac=p_frac,
-        zero_out_threshold=zero_out_threshold,
-        seed_exp=seed_exp,
-        seed_frac=seed_frac,
-    )
-    logger.info(bitflip)
-
-    for i in range(n_passes):
-        x = torch.randn(8, device=DEVICE, dtype=torch.float32)
-        x = x + 0.1
-        x.requires_grad_()
-
-        out = bitflip(x)
-        loss = torch.sum(out)
-        loss.backward()
-
-        assert torch.all(torch.isfinite(x))
-        assert torch.all((out != 0) == (x.grad == 1.0))
-        logger.info(f"{i}-th pass, {bitflip}")
-
-
 if __name__ == "__main__":
     set_logging_verbosity("info")
     torch.set_printoptions(linewidth=120)
     # test_random_bitflip_forward_simple()
-    # test_random_bitflip_forward_fully_activated()
+    test_random_bitflip_forward_fully_activated()
     # test_random_bitflip_forward_zero_outed()
     # test_random_bitflip_fn_backward()
-    test_random_bitflip_layer()

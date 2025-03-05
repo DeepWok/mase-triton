@@ -4,11 +4,11 @@ import torch
 from torch import Tensor
 import triton
 import triton.language as tl
-from .dtype import TORCH_DTYPE_TO_TRITON
-from .about import PACKAGE_NAME
+from ..dtype import TORCH_DTYPE_TO_TRITON
+from ..about import PACKAGE_NAME
 
 
-def calculate_flip_probability(prob_halves: int) -> float:
+def calculate_flip_probability(prob_halves: int | None) -> float | None:
     """Calculate the flip probability from the number of halves, prob = 0.5^prob_halves.
     Note that current flip kernel uses bitwise-or only (refer to _cta_random_flip).
 
@@ -22,10 +22,14 @@ def calculate_flip_probability(prob_halves: int) -> float:
     float
         the flip probability
     """
-    return 0.5**prob_halves
+    if prob_halves is None:
+        return None
+    else:
+        assert prob_halves > 0
+        return 0.5**prob_halves
 
 
-def find_nearest_prob_n_halves(prob: float) -> int:
+def find_nearest_prob_n_halves(prob: float | None) -> int | None:
     """
     Calculate the smallest integer n such that (1/2)^n is less than or equal to the given probability.
 
@@ -37,8 +41,11 @@ def find_nearest_prob_n_halves(prob: float) -> int:
     Returns:
         int: The smallest integer n such that (1/2)^n <= prob.
     """
-
-    return math.ceil(math.log2(1 / prob))
+    if prob is None:
+        return None
+    else:
+        assert 0 < prob < 1
+        return math.ceil(math.log2(1 / prob))
 
 
 @triton.jit
@@ -183,7 +190,6 @@ def random_bitflip_fn(
     seed_exp: int,
     seed_frac: int,
     zero_out_threshold: float | None,
-    train: bool,
 ) -> tuple[Tensor, int, int]:
     """Forward pass of random bit flip operation.
 
@@ -192,9 +198,11 @@ def random_bitflip_fn(
     x : Tensor
         input tensor
     exp_halves : int | None
-        the random bit flip probability for sign-exponent bits = 0.5^exp_halves
+        the random bit flip probability for sign-exponent bits = 0.5^exp_halves.
+        If None, no random bit flip is performed for sign-exponent bits.
     frac_halves : int | None
-        the random bit flip probability for fraction bits = 0.5^frac_halves
+        the random bit flip probability for fraction bits = 0.5^frac_halves.
+        If None, no random bit flip is performed for fraction bits.
     seed_exp : int
         the random seed for sign-exp bits. Note the same seed generates the same random bits,
         thus the seed needs to be updated after each call.
@@ -204,8 +212,6 @@ def random_bitflip_fn(
     zero_out_threshold : float | None
         if not None, zero out the bits whose absolute value is less than this threshold (including NaN).
         if None, no zero out operation is performed.
-    train : bool
-        whether the operation is performed in training mode. If False, no random bit flip is performed.
 
     Returns
     -------
@@ -213,12 +219,15 @@ def random_bitflip_fn(
         the output tensor, the updated seed_exp, and the updated seed_frac
     """
     assert x.dtype in BIT_FLIP_DTYPE_MAP
+    assert zero_out_threshold is None or zero_out_threshold >= 0.0
     skip_exp_flip = exp_halves is None
     skip_frac_flip = frac_halves is None
     enable_zero_out = zero_out_threshold is not None
-    if (skip_exp_flip and skip_exp_flip) or (not train):
+    if skip_exp_flip and skip_frac_flip:
         if enable_zero_out:
             output = torch.where(x.abs() < zero_out_threshold, x, 0.0)
+        else:
+            output = x.clone()
         return output, seed_exp, seed_frac
     else:
         x = x.contiguous()
@@ -256,7 +265,6 @@ def _random_bitflip_forward_fake(
     seed_exp: int,
     seed_frac: int,
     zero_out_threshold: float | None,
-    train: bool,
 ) -> tuple[Tensor, int, int]:
     output = torch.empty_like(x, dtype=x.dtype)
     return output, seed_exp, seed_frac
@@ -435,71 +443,8 @@ def _random_bitflip_backward_cpu():
     ...
 
 
-class RandomBitFlip(torch.nn.Module):
-    """Random bit flip layer, which flips the sign-exponent and fraction bits with given probabilities.
-    If zero_out_threshold is not None, the flipped element whose absolute value is less than this threshold are zeroed out,
-    the gradient of these zeroed out elements are also zeroed out.
-
-    Parameters
-    ----------
-    p_exp : float | None
-        the random bit flip probability for sign-exponent bits = 0.5^find_nearest_prob_n_halves(p_exp)
-    p_frac : float | None
-        the random bit flip probability for fraction bits = 0.5^find_nearest_prob_n_halves(p_frac)
-    zero_out_threshold : float | None
-        if not None, zero out the bits whose absolute value is less than this threshold (including NaN).
-        if None, no zero out operation is performed.
-    seed_exp : int
-        the initial random seed for sign-exp bits. Note the same seed generates the same random bits,
-        thus the seed is updated after each call.
-    seed_frac : int
-        the random seed for sign-exp bits. Note the same seed generates the same random bits,
-        thus the seed is updated after each call.
-    """
-
-    def __init__(
-        self,
-        p_exp: float | None,
-        p_frac: float | None,
-        zero_out_threshold: float | None,
-        seed_exp: int,
-        seed_frac: int,
-    ):
-        super().__init__()
-        self.p_exp = p_exp
-        self.p_frac = p_frac
-        self.nearest_exp_halves = find_nearest_prob_n_halves(p_exp)
-        self.nearest_frac_halves = find_nearest_prob_n_halves(p_frac)
-        self.seed_exp = seed_exp
-        self.seed_frac = seed_frac
-        self.zero_out_threshold = zero_out_threshold
-
-    def forward(self, x: Tensor) -> Tensor:
-        out, seed_exp, seed_frac = random_bitflip_fn(
-            x,
-            exp_halves=self.nearest_exp_halves,
-            frac_halves=self.nearest_frac_halves,
-            seed_exp=self.seed_exp,
-            seed_frac=self.seed_frac,
-            zero_out_threshold=self.zero_out_threshold,
-            train=self.training,
-        )
-        self.seed_exp = seed_exp
-        self.seed_frac = seed_frac
-        return out
-
-    def extra_repr(self) -> str:
-        return (
-            f"nearest_p_exp={calculate_flip_probability(self.nearest_exp_halves)}, "
-            f"nearest_p_frac={calculate_flip_probability(self.nearest_frac_halves)}, "
-            f"zero_out_threshold={self.zero_out_threshold}, "
-            f"seed_exp={self.seed_exp}, seed_frac={self.seed_frac}"
-        )
-
-
 __all__ = [
     "random_bitflip_fn",
-    "RandomBitFlip",
     "find_nearest_prob_n_halves",
     "calculate_flip_probability",
 ]
