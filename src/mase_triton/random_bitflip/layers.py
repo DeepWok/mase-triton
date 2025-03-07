@@ -139,8 +139,8 @@ class RandomBitFlipLinear(torch.nn.Linear):
                 seed_frac=self.w_seed_frac,
                 zero_out_threshold=self.w_zero_out_t,
             )
-            self.w_seed_exp.copy_(w_seed_exp)
-            self.w_seed_frac.copy_(w_seed_frac)
+            self.w_seed_exp = w_seed_exp
+            self.w_seed_frac = w_seed_frac
         out = torch.nn.functional.linear(x, w, self.bias)
         return out
 

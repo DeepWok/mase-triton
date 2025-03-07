@@ -75,6 +75,7 @@ def test_random_bitflip_linear_act_only():
         w_zero_out_t=w_zero_out_t,
     )
     logger.info(str(bitflip_fc))
+    bitflip_fc.train()
 
     for i in range(n_tries):
         x = torch.randn(bs, in_features, device=DEVICE, dtype=dtype)
@@ -83,6 +84,8 @@ def test_random_bitflip_linear_act_only():
         assert torch.all(torch.isfinite(x))
         assert x.shape == out.shape
         find_bitflip = not torch.equal(x, out)
+        loss = torch.sum(out)
+        loss.backward()
         if find_bitflip:
             mismatch_rates = calculate_bit_mismatch_rate(x, out)
             logger.info(f"{i}-th try, mismatch_rates: {mismatch_rates}")
