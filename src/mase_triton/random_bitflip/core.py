@@ -404,8 +404,6 @@ def _random_bitflip_backward_fake(
 def _random_bitflip_backward_wrapper(ctx, *grad_outputs):
     exp_halves = ctx.exp_halves
     frac_halves = ctx.frac_halves
-    # seed_exp = ctx.seed_exp
-    # seed_frac = ctx.seed_frac
     zero_out_threshold = ctx.zero_out_threshold
 
     x = ctx.saved_tensors[0]
