@@ -187,10 +187,10 @@ def random_bitflip_fn(
     x: Tensor,
     exp_halves: int | None,
     frac_halves: int | None,
-    seed_exp: int,
-    seed_frac: int,
+    seed_exp: Tensor,
+    seed_frac: Tensor,
     zero_out_threshold: float | None,
-) -> tuple[Tensor, int, int]:
+) -> tuple[Tensor, Tensor, Tensor]:
     """Forward pass of random bit flip operation.
 
     Parameters
@@ -228,7 +228,7 @@ def random_bitflip_fn(
             output = torch.where(x.abs() < zero_out_threshold, x, 0.0)
         else:
             output = x.clone()
-        return output, seed_exp, seed_frac
+        return output, seed_exp.clone(), seed_frac.clone()
     else:
         x = x.contiguous()
         output = torch.empty_like(x)
@@ -240,8 +240,8 @@ def random_bitflip_fn(
             n_elements=num_elements,
             exp_halves=exp_halves,
             frac_halves=frac_halves,
-            seed_exp=seed_exp,
-            seed_frac=seed_frac,
+            seed_exp=seed_exp.item(),
+            seed_frac=seed_frac.item(),
             zero_out_threshold=zero_out_threshold if enable_zero_out else 0.0,
             SKIP_EXP_FLIP=skip_exp_flip,
             SKIP_FRAC_FLIP=skip_frac_flip,
@@ -250,9 +250,9 @@ def random_bitflip_fn(
             BIN_DTYPE=BIT_FLIP_DTYPE_MAP[x.dtype],
         )
         if not skip_exp_flip:
-            seed_exp += math.ceil(exp_halves / 4)
+            seed_exp = seed_exp + math.ceil(exp_halves / 4)
         if not skip_frac_flip:
-            seed_frac += math.ceil(frac_halves / 4)
+            seed_frac = seed_frac + math.ceil(frac_halves / 4)
 
         return output, seed_exp, seed_frac
 
@@ -262,10 +262,10 @@ def _random_bitflip_forward_fake(
     x: Tensor,
     exp_halves: int | None,
     frac_halves: int | None,
-    seed_exp: int,
-    seed_frac: int,
+    seed_exp: Tensor,
+    seed_frac: Tensor,
     zero_out_threshold: float | None,
-) -> tuple[Tensor, int, int]:
+) -> tuple[Tensor, Tensor, Tensor]:
     output = torch.empty_like(x, dtype=x.dtype)
     return output, seed_exp, seed_frac
 
@@ -346,8 +346,8 @@ def _random_bitflip_backward(
     grad_y: Tensor,
     exp_halves: int | None,
     frac_halves: int | None,
-    seed_exp: int,
-    seed_frac: int,
+    seed_exp: Tensor,
+    seed_frac: Tensor,
     zero_out_threshold: float | None,
 ) -> Tensor:
     assert x.dtype in BIT_FLIP_DTYPE_MAP
@@ -373,8 +373,8 @@ def _random_bitflip_backward(
                 n_elements=num_elements,
                 exp_halves=exp_halves,
                 frac_halves=frac_halves,
-                seed_exp=seed_exp,
-                seed_frac=seed_frac,
+                seed_exp=seed_exp.item(),
+                seed_frac=seed_frac.item(),
                 zero_out_threshold=zero_out_threshold,
                 SKIP_EXP_FLIP=skip_exp_flip,
                 SKIP_FRAC_FLIP=skip_frac_flip,
@@ -393,8 +393,8 @@ def _random_bitflip_backward_fake(
     grad_y: Tensor,
     exp_halves: int | None,
     frac_halves: int | None,
-    seed_exp: int,
-    seed_frac: int,
+    seed_exp: Tensor,
+    seed_frac: Tensor,
     zero_out_threshold: float | None,
 ) -> Tensor:
     grad_x = torch.empty_like(grad_y)

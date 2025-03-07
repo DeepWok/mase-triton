@@ -94,5 +94,5 @@ if __name__ == "__main__":
 
     set_ipdb_breakpoint()
     set_logging_verbosity("info")
-    # test_random_bitflip_dropout()
+    test_random_bitflip_dropout()
     test_random_bitflip_linear_act_only()
