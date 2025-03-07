@@ -62,8 +62,8 @@ class RandomBitFlipDropout(torch.nn.Module):
                 seed_frac=self.seed_frac,
                 zero_out_threshold=self.zero_out_t,
             )
-            self.seed_exp.copy_(seed_exp)
-            self.seed_frac.copy_(seed_frac)
+            self.seed_exp = seed_exp
+            self.seed_frac = seed_frac
             return out
 
     def extra_repr(self) -> str:
@@ -125,8 +125,8 @@ class RandomBitFlipLinear(torch.nn.Linear):
                 seed_frac=self.x_seed_frac,
                 zero_out_threshold=self.x_zero_out_t,
             )
-            self.x_seed_exp.copy_(x_seed_exp)
-            self.x_seed_frac.copy_(x_seed_frac)
+            self.x_seed_exp = x_seed_exp
+            self.x_seed_frac = x_seed_frac
 
         if self.w_p_exp is None and self.w_p_frac is None and self.w_zero_out_t is None:
             w = self.weight

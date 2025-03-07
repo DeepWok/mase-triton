@@ -404,11 +404,13 @@ def _random_bitflip_backward_fake(
 def _random_bitflip_backward_wrapper(ctx, *grad_outputs):
     exp_halves = ctx.exp_halves
     frac_halves = ctx.frac_halves
-    seed_exp = ctx.seed_exp
-    seed_frac = ctx.seed_frac
+    # seed_exp = ctx.seed_exp
+    # seed_frac = ctx.seed_frac
     zero_out_threshold = ctx.zero_out_threshold
 
     x = ctx.saved_tensors[0]
+    seed_exp = ctx.saved_tensors[1]
+    seed_frac = ctx.saved_tensors[2]
     grad_input = _random_bitflip_backward(
         x=x,
         grad_y=grad_outputs[0],
@@ -422,11 +424,9 @@ def _random_bitflip_backward_wrapper(ctx, *grad_outputs):
 
 
 def _random_bitflip_setup_context(ctx, inputs, output):
-    ctx.save_for_backward(inputs[0])
+    ctx.save_for_backward(inputs[0], inputs[3], inputs[4])  # x, seed_exp, seed_frac
     ctx.exp_halves = inputs[1]
     ctx.frac_halves = inputs[2]
-    ctx.seed_exp = inputs[3]
-    ctx.seed_frac = inputs[4]
     ctx.zero_out_threshold = inputs[5]
 
 
