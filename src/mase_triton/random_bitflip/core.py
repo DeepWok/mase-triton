@@ -251,8 +251,12 @@ def random_bitflip_fn(
         )
         if not skip_exp_flip:
             seed_exp = seed_exp + math.ceil(exp_halves / 4)
+        else:
+            seed_exp = seed_exp.clone()
         if not skip_frac_flip:
             seed_frac = seed_frac + math.ceil(frac_halves / 4)
+        else:
+            seed_frac = seed_frac.clone()
 
         return output, seed_exp, seed_frac
 

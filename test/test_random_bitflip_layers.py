@@ -86,6 +86,8 @@ def test_random_bitflip_linear_act_only():
         find_bitflip = not torch.equal(x, out)
         loss = torch.sum(out)
         loss.backward()
+        x.grad
+        bitflip_fc.weight.grad
         if find_bitflip:
             mismatch_rates = calculate_bit_mismatch_rate(x, out)
             logger.info(f"{i}-th try, mismatch_rates: {mismatch_rates}")
