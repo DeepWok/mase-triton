@@ -37,14 +37,17 @@ class RandomBitFlipDropout(torch.nn.Module):
         zero_out_t: float | None,
         seed_exp: int = 0,
         seed_frac: int = 0,
+        device: str | torch.device | None = None,
     ):
         super().__init__()
         self.p_exp = p_exp
         self.p_frac = p_frac
         self.nearest_exp_halves = find_nearest_prob_n_halves(p_exp)
         self.nearest_frac_halves = find_nearest_prob_n_halves(p_frac)
-        self.seed_exp = seed_exp
-        self.seed_frac = seed_frac
+        self.register_buffer("seed_exp", torch.tensor(seed_exp, dtype=torch.int64, device=device))
+        self.register_buffer("seed_frac", torch.tensor(seed_frac, dtype=torch.int64, device=device))
+        self.seed_exp: Tensor
+        self.seed_frac: Tensor
         self.zero_out_t = zero_out_t
 
     def forward(self, x: Tensor) -> Tensor:
@@ -68,7 +71,7 @@ class RandomBitFlipDropout(torch.nn.Module):
             f"nearest_p_exp={_format_prob(calculate_flip_probability(self.nearest_exp_halves))}, "
             f"nearest_p_frac={_format_prob(calculate_flip_probability(self.nearest_frac_halves))}, "
             f"zero_out_threshold={self.zero_out_t}, "
-            f"seed_exp={self.seed_exp}, seed_frac={self.seed_frac}"
+            f"seed_exp={self.seed_exp.item()}, seed_frac={self.seed_frac.item()}"
         )
 
 
@@ -96,16 +99,20 @@ class RandomBitFlipLinear(torch.nn.Linear):
         self.x_p_frac = x_p_frac
         self.x_nearest_exp_halves = find_nearest_prob_n_halves(x_p_exp)
         self.x_nearest_frac_halves = find_nearest_prob_n_halves(x_p_frac)
-        self.x_seed_exp = x_seed_exp
-        self.x_seed_frac = x_seed_frac
+        self.register_buffer("x_seed_exp", torch.tensor(x_seed_exp, dtype=torch.int64, device=device))
+        self.register_buffer("x_seed_frac", torch.tensor(x_seed_frac, dtype=torch.int64, device=device))
+        self.x_seed_exp: Tensor
+        self.x_seed_frac: Tensor
         self.x_zero_out_t = x_zero_out_t
 
         self.w_p_exp = w_p_exp
         self.w_p_frac = w_p_frac
         self.w_nearest_exp_halves = find_nearest_prob_n_halves(w_p_exp)
         self.w_nearest_frac_halves = find_nearest_prob_n_halves(w_p_frac)
-        self.w_seed_exp = w_seed_exp
-        self.w_seed_frac = w_seed_frac
+        self.register_buffer("w_seed_exp", torch.tensor(w_seed_exp, dtype=torch.int64, device=device))
+        self.register_buffer("w_seed_frac", torch.tensor(w_seed_frac, dtype=torch.int64, device=device))
+        self.w_seed_exp: Tensor
+        self.w_seed_frac: Tensor
         self.w_zero_out_t = w_zero_out_t
 
     def forward(self, x: Tensor) -> Tensor:
@@ -132,8 +139,8 @@ class RandomBitFlipLinear(torch.nn.Linear):
                 seed_frac=self.w_seed_frac,
                 zero_out_threshold=self.w_zero_out_t,
             )
-            self.w_seed_exp = w_seed_exp
-            self.w_seed_frac = w_seed_frac
+            self.w_seed_exp.copy_(w_seed_exp)
+            self.w_seed_frac.copy_(w_seed_frac)
         out = torch.nn.functional.linear(x, w, self.bias)
         return out
 
@@ -180,10 +187,10 @@ class RandomBitFlipLinear(torch.nn.Linear):
             f"x_nearest_p_exp={_format_prob(calculate_flip_probability(self.x_nearest_exp_halves))}, "
             f"x_nearest_p_frac={_format_prob(calculate_flip_probability(self.x_nearest_frac_halves))}, "
             f"x_zero_out_threshold={self.x_zero_out_t}, "
-            f"x_seed_exp={self.x_seed_exp}, x_seed_frac={self.x_seed_frac}, "
+            f"x_seed_exp={self.x_seed_exp.item()}, x_seed_frac={self.x_seed_frac.item()}, "
             f"w_nearest_p_exp={_format_prob(calculate_flip_probability(self.w_nearest_exp_halves))}, "
             f"w_nearest_p_frac={_format_prob(calculate_flip_probability(self.w_nearest_frac_halves))}, "
             f"w_zero_out_threshold={self.w_zero_out_t}, "
-            f"w_seed_exp={self.w_seed_exp}, w_seed_frac={self.w_seed_frac}"
+            f"w_seed_exp={self.w_seed_exp.item()}, w_seed_frac={self.w_seed_frac.item()}"
         )
         return text
