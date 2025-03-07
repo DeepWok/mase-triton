@@ -22,8 +22,6 @@ def test_random_bitflip_forward_simple():
     exp_halves = 4
     frac_halves = 1
     seed_exp, seed_frac = 0, 0
-    seed_exp = torch.tensor(seed_exp, dtype=torch.int64, device=DEVICE)
-    seed_frac = torch.tensor(seed_frac, dtype=torch.int64, device=DEVICE)
     out, seed_exp, seed_frac = random_bitflip_fn(
         x,
         exp_halves=exp_halves,
@@ -50,8 +48,6 @@ def test_random_bitflip_forward_fully_activated():
             exp_halves = find_nearest_prob_n_halves(exp_p)
             frac_halves = find_nearest_prob_n_halves(frac_p)
             seed_exp, seed_frac = 0, 0
-            seed_exp = torch.tensor(seed_exp, dtype=torch.int64, device=DEVICE)
-            seed_frac = torch.tensor(seed_frac, dtype=torch.int64, device=DEVICE)
             logger.info(
                 f"====== input_dtype = {input_dtype}, exp_p = {exp_p}, frac_p = {frac_p}, exp_halves = {exp_halves}, frac_halves = {frac_halves} ====="
             )
@@ -83,8 +79,6 @@ def test_random_bitflip_forward_zero_outed():
         x = torch.randn(2048, 2048, device=DEVICE, dtype=torch.float32)
         frac_halves = 2
         seed_exp, seed_frac = 0, 0
-        seed_exp = torch.tensor(seed_exp, dtype=torch.int64, device=DEVICE)
-        seed_frac = torch.tensor(seed_frac, dtype=torch.int64, device=DEVICE)
         zero_out_threshold = 200.0
         out, seed_exp, seed_frac = random_bitflip_fn(
             x,
@@ -111,8 +105,6 @@ def test_random_bitflip_fn_backward():
             x.requires_grad_()
             frac_halves = 2
             seed_exp, seed_frac = 0, 0
-            seed_exp = torch.tensor(seed_exp, dtype=torch.int64, device=DEVICE, requires_grad=False)
-            seed_frac = torch.tensor(seed_frac, dtype=torch.int64, device=DEVICE, requires_grad=False)
             zero_out_threshold = 200.0
             out, seed_exp, seed_frac = random_bitflip_fn(
                 x,
