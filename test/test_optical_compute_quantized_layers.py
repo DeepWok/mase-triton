@@ -122,6 +122,8 @@ def test_optical_compute_quantized_linear_mnist():
         total = 0
         with torch.no_grad():
             for i, (img_batch, label_batch) in enumerate(dataloader):
+                img_batch = img_batch.to(DEVICE).to(dtype)
+                label_batch = label_batch.to(DEVICE)
                 out = net(img_batch)
                 _, predicted = torch.max(out, 1)
                 total += label_batch.size(0)
