@@ -267,6 +267,8 @@ def _random_bitflip_forward_fake(
     zero_out_threshold: float | None,
 ) -> tuple[Tensor, int, int]:
     output = torch.empty_like(x, dtype=x.dtype)
+    seed_exp = seed_exp + 1
+    seed_frac = seed_frac + 1
     return output, seed_exp, seed_frac
 
 
@@ -433,14 +435,31 @@ def _random_bitflip_setup_context(ctx, inputs, output):
 random_bitflip_fn.register_autograd(_random_bitflip_backward_wrapper, setup_context=_random_bitflip_setup_context)
 
 
-def _random_bitflip_forward_cpu():
+@random_bitflip_fn.register_kernel("cpu")
+def _random_bitflip_forward_cpu(
+    x: Tensor,
+    exp_halves: int | None,
+    frac_halves: int | None,
+    seed_exp: int,
+    seed_frac: int,
+    zero_out_threshold: float | None,
+) -> tuple[Tensor, int, int]:
     # TODO: implement the CPU version of random bit flip using numpy
-    ...
+    raise NotImplementedError("CPU version of random bit flip is not implemented yet.")
 
 
-def _random_bitflip_backward_cpu():
+@random_bitflip_fn.register_kernel("cpu")
+def _random_bitflip_backward_cpu(
+    x: Tensor,
+    grad_y: Tensor,
+    exp_halves: int | None,
+    frac_halves: int | None,
+    seed_exp: int,
+    seed_frac: int,
+    zero_out_threshold: float | None,
+) -> Tensor:
     # TODO: implement the CPU version of random bit flip backward using numpy
-    ...
+    raise NotImplementedError("CPU version of random bit flip backward is not implemented yet.")
 
 
 __all__ = [
