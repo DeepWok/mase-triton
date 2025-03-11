@@ -8,6 +8,7 @@ from mase_triton.optical_compute.core import optical_compute_quantized_forward_f
 from mase_triton.optical_compute.layers import OpticalComputeQLinear
 from mase_triton.about import PACKAGE_NAME
 from mase_triton.utils.deps import all_packages_are_available
+from mase_triton.logging import set_logging_verbosity
 
 DEVICE = "cuda"
 
@@ -134,5 +135,6 @@ def test_optical_compute_quantized_linear_mnist():
 
 
 if __name__ == "__main__":
+    set_logging_verbosity("info")
     # test_optical_compute_quantized_linear_simple()
     test_optical_compute_quantized_linear_mnist()
