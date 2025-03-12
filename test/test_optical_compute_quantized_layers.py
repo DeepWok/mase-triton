@@ -46,7 +46,7 @@ def test_optical_compute_quantized_linear_mnist():
     in_features = 784
     intermediate_features = 40
     out_features = 10
-    num_epochs = 10
+    num_epochs = 50
     dtype = torch.bfloat16
 
     class NetOptical(torch.nn.Module):
@@ -105,7 +105,7 @@ def test_optical_compute_quantized_linear_mnist():
     net = NetBaseline(in_features, intermediate_features, out_features)
     net.bfloat16()
     net.to(DEVICE)
-    dataloader = DataLoader(mnist, batch_size=256)
+    dataloader = DataLoader(mnist, batch_size=512)
 
     optimizer = torch.optim.AdamW(net.parameters())
     prog_bar = tqdm(range(num_epochs * len(dataloader)), desc="Training", total=num_epochs * len(dataloader))
@@ -122,20 +122,20 @@ def test_optical_compute_quantized_linear_mnist():
             optimizer.step()
             prog_bar.update(1)
 
-        # eval on train set
-        net.eval()
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for i, (img_batch, label_batch) in enumerate(dataloader):
-                img_batch = img_batch.to(DEVICE).to(dtype)
-                label_batch = label_batch.to(DEVICE)
-                out = net(img_batch)
-                _, predicted = torch.max(out, 1)
-                total += label_batch.size(0)
-                correct += (predicted == label_batch).sum().item()
+    # eval on train set
+    net.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for i, (img_batch, label_batch) in enumerate(dataloader):
+            img_batch = img_batch.to(DEVICE).to(dtype)
+            label_batch = label_batch.to(DEVICE)
+            out = net(img_batch)
+            _, predicted = torch.max(out, 1)
+            total += label_batch.size(0)
+            correct += (predicted == label_batch).sum().item()
         acc = 100 * correct / total
-        logger.info(f"Epoch {epoch}: Train accuracy: {acc:.2f}%")
+        logger.info(f"Train accuracy: {acc:.2f}%")
     prog_bar.close()
 
 
