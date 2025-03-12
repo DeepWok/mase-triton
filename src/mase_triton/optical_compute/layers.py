@@ -29,13 +29,14 @@ class OpticalComputeQLinear(torch.nn.Linear):
         self.bypass = q_bypass
 
         # fmt: off
-        self.register_buffer("q_min_max_quantile", torch.tensor([q_min_quantile, q_max_quantile], device=device, dtype=torch.float, requires_grad=False))
+        self.q_min_max_quantile = [q_min_quantile, q_max_quantile]
+        # self.register_buffer("q_min_max_quantile", torch.tensor([q_min_quantile, q_max_quantile], device=device, dtype=torch.float, requires_grad=False))
         self.register_buffer("x_running_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype, requires_grad=False))
         self.register_buffer("w_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype, requires_grad=False))
         self.register_buffer("out_running_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype, requires_grad=False))
         self.register_buffer("q_num_tracked_samples", torch.tensor(0, device=device, dtype=torch.int64, requires_grad=False))
         # fmt: on
-        self.q_min_max_quantile: Tensor
+        # self.q_min_max_quantile: Tensor
         self.x_running_min_max: Tensor
         self.w_min_max: Tensor
         self.out_running_min_max: Tensor
@@ -47,15 +48,18 @@ class OpticalComputeQLinear(torch.nn.Linear):
     def _update_running_stats(self, x: Tensor | None, w: Tensor | None, out: Tensor | None):
         dtype = self.x_running_min_max.dtype
         if self.training:
+            q_min_max_quantile = torch.tensor(
+                self.q_min_max_quantile, device=self.x_running_min_max.device, dtype=torch.float
+            )
             # act
             # fmt: off
             if x is not None:
                 if self.num_samples_to_track is None or self.q_num_tracked_samples.item() < self.num_samples_to_track:
                     if torch.isinf(self.x_running_min_max).any():
-                        x_running_min_max = x.flatten().float().quantile(self.q_min_max_quantile).to(dtype)
+                        x_running_min_max = x.flatten().float().quantile(q_min_max_quantile).to(dtype)
                         self.x_running_min_max = x_running_min_max
                     else:
-                        x_running_min_max = x.flatten().float().quantile(self.q_min_max_quantile).to(dtype)
+                        x_running_min_max = x.flatten().float().quantile(q_min_max_quantile).to(dtype)
                         self.x_running_min_max = self.stat_smooth_factor * self.x_running_min_max + (1 - self.stat_smooth_factor) * x_running_min_max
                     self.q_num_tracked_samples += x.size(0)
             # fmt: on
@@ -68,9 +72,9 @@ class OpticalComputeQLinear(torch.nn.Linear):
             if out is not None:
                 if self.num_samples_to_track is None or self.q_num_tracked_samples.item() < self.num_samples_to_track:
                     if torch.isinf(self.out_running_min_max).any():
-                        self.out_running_min_max = out.flatten().float().quantile(self.q_min_max_quantile).to(dtype)
+                        self.out_running_min_max = out.flatten().float().quantile(q_min_max_quantile).to(dtype)
                     else:
-                        out_running_min_max = out.flatten().float().quantile(self.q_min_max_quantile).to(dtype)
+                        out_running_min_max = out.flatten().float().quantile(q_min_max_quantile).to(dtype)
                         self.out_running_min = self.stat_smooth_factor * self.out_running_min_max + (1 - self.stat_smooth_factor) * out_running_min_max
             # fmt: on
 

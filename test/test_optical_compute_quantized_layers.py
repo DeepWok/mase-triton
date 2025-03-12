@@ -48,22 +48,23 @@ def test_optical_compute_quantized_linear_mnist():
     num_epochs = 10
     dtype = torch.bfloat16
 
-    class Net(torch.nn.Module):
-        def __init__(self, in_features, intermediate_features, out_features, dtype, device="cpu"):
+    class NetOptical(torch.nn.Module):
+        def __init__(self, in_features, intermediate_features, out_features):
             super().__init__()
             self.fc1 = OpticalComputeQLinear(
                 in_features=in_features,
                 out_features=intermediate_features,
                 bias=False,
-                device=device,
-                dtype=dtype,
             )
             self.fc2 = OpticalComputeQLinear(
                 in_features=intermediate_features,
+                out_features=intermediate_features // 2,
+                bias=False,
+            )
+            self.fc3 = OpticalComputeQLinear(
+                in_features=intermediate_features // 2,
                 out_features=out_features,
                 bias=False,
-                device=device,
-                dtype=dtype,
             )
 
         def forward(self, x):
@@ -71,7 +72,24 @@ def test_optical_compute_quantized_linear_mnist():
             x = self.fc1(x)
             x = torch.relu(x)
             x = self.fc2(x)
+            x = torch.relu(x)
+            x = self.fc3(x)
             return x
+
+    class NetBaseline(torch.nn.Module):
+        def __init__(self, in_features, intermediate_features, out_features):
+            super().__init__()
+            self.fc1 = torch.nn.Linear(in_features, intermediate_features, bias=False)
+            self.fc2 = torch.nn.Linear(intermediate_features, intermediate_features // 2, bias=False)
+            self.fc3 = torch.nn.Linear(intermediate_features // 2, out_features, bias=False)
+
+        def forward(self, x):
+            x = x.view(-1, 784)
+            x = self.fc1(x)
+            x = torch.relu(x)
+            x = self.fc2(x)
+            x = torch.relu(x)
+            x = self.fc3(x)
 
     class DataLoader:
         def __init__(self, mnist, batch_size):
@@ -99,7 +117,10 @@ def test_optical_compute_quantized_linear_mnist():
         def __len__(self):
             return len(self.mnist) // self.batch_size
 
-    net = Net(in_features, intermediate_features, out_features, dtype, DEVICE)
+    # net = NetOptical(in_features, intermediate_features, out_features)
+    net = NetBaseline(in_features, intermediate_features, out_features)
+    net.bfloat16()
+    net.to(DEVICE)
     dataloader = DataLoader(mnist, batch_size=32)
 
     optimizer = torch.optim.AdamW(net.parameters(), lr=0.01)
