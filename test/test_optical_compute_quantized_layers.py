@@ -42,8 +42,9 @@ def test_optical_compute_quantized_linear_mnist():
     from tqdm import tqdm
 
     mnist = load_dataset("ylecun/mnist", split="train")
+    mnist = mnist.shuffle(seed=42)
     in_features = 784
-    intermediate_features = 20
+    intermediate_features = 40
     out_features = 10
     num_epochs = 10
     dtype = torch.bfloat16
@@ -51,36 +52,21 @@ def test_optical_compute_quantized_linear_mnist():
     class NetOptical(torch.nn.Module):
         def __init__(self, in_features, intermediate_features, out_features):
             super().__init__()
-            self.fc1 = OpticalComputeQLinear(
-                in_features=in_features,
-                out_features=intermediate_features,
-                bias=False,
-            )
-            self.fc2 = OpticalComputeQLinear(
-                in_features=intermediate_features,
-                out_features=intermediate_features // 2,
-                bias=False,
-            )
-            self.fc3 = OpticalComputeQLinear(
-                in_features=intermediate_features // 2,
-                out_features=out_features,
-                bias=False,
-            )
+            self.fc1 = OpticalComputeQLinear(in_features=in_features, out_features=intermediate_features, bias=False)
+            self.fc2 = OpticalComputeQLinear(in_features=intermediate_features, out_features=out_features, bias=False)
 
         def forward(self, x):
             x = x.view(-1, 784)
             x = self.fc1(x)
             x = torch.relu(x)
             x = self.fc2(x)
-            x = torch.relu(x)
-            x = self.fc3(x)
             return x
 
     class NetBaseline(torch.nn.Module):
         def __init__(self, in_features, intermediate_features, out_features):
             super().__init__()
-            self.fc1 = torch.nn.Linear(in_features, intermediate_features, bias=False)
-            self.fc2 = torch.nn.Linear(intermediate_features, out_features, bias=False)
+            self.fc1 = torch.nn.Linear(in_features, intermediate_features, bias=True)
+            self.fc2 = torch.nn.Linear(intermediate_features, out_features, bias=True)
 
         def forward(self, x):
             x = x.view(-1, 784)
