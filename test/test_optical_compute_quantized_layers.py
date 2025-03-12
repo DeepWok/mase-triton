@@ -43,7 +43,7 @@ def test_optical_compute_quantized_linear_mnist():
 
     mnist = load_dataset("ylecun/mnist", split="train")
     in_features = 784
-    intermediate_features = 256
+    intermediate_features = 20
     out_features = 10
     num_epochs = 10
     dtype = torch.bfloat16
@@ -80,16 +80,14 @@ def test_optical_compute_quantized_linear_mnist():
         def __init__(self, in_features, intermediate_features, out_features):
             super().__init__()
             self.fc1 = torch.nn.Linear(in_features, intermediate_features, bias=False)
-            self.fc2 = torch.nn.Linear(intermediate_features, intermediate_features // 2, bias=False)
-            self.fc3 = torch.nn.Linear(intermediate_features // 2, out_features, bias=False)
+            self.fc2 = torch.nn.Linear(intermediate_features, out_features, bias=False)
 
         def forward(self, x):
             x = x.view(-1, 784)
             x = self.fc1(x)
             x = torch.relu(x)
             x = self.fc2(x)
-            x = torch.relu(x)
-            x = self.fc3(x)
+            return x
 
     class DataLoader:
         def __init__(self, mnist, batch_size):
@@ -121,9 +119,9 @@ def test_optical_compute_quantized_linear_mnist():
     net = NetBaseline(in_features, intermediate_features, out_features)
     net.bfloat16()
     net.to(DEVICE)
-    dataloader = DataLoader(mnist, batch_size=32)
+    dataloader = DataLoader(mnist, batch_size=256)
 
-    optimizer = torch.optim.AdamW(net.parameters(), lr=0.01)
+    optimizer = torch.optim.AdamW(net.parameters())
     prog_bar = tqdm(range(num_epochs * len(dataloader)), desc="Training", total=num_epochs * len(dataloader))
     net.to(DEVICE)
     for epoch in range(num_epochs):
