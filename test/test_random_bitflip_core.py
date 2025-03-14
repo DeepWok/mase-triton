@@ -1,4 +1,6 @@
 import logging
+import tabulate
+import tqdm
 
 import torch
 
@@ -37,20 +39,41 @@ def test_random_bitflip_forward_simple():
 
 @torch.no_grad()
 def test_random_bitflip_forward_fully_activated():
-    input_dtypes = [torch.float32, torch.float16, torch.bfloat16]
-    s_exp_halves_frac_halves = [(0.5, 0.5), (0.5**4, 0.5**2), (0.5**3.8, 0.5**10)]
+    dtype2exp_bits = {
+        torch.float32: 9,
+        torch.float16: 6,
+        torch.bfloat16: 9,
+    }
+    dtype2frac_bits = {
+        torch.float32: 23,
+        torch.float16: 10,
+        torch.bfloat16: 7,
+    }
+    num_workers = 16
+    # input_dtypes = [torch.float32, torch.float16, torch.bfloat16]
+    input_dtypes = [torch.float16]
+    s_exp_halves_frac_halves = [(0.5**n, 0.5**n) for n in range(1, 32)]
+    M = 2048
     max_tries = 1000
-
+    rows = []
+    headers = [
+        "input_dtype",
+        "exp_n_halves",
+        "exp_p",
+        "exp_p*exp_bits",
+        "exp_ratio",
+        "frac_n_halves",
+        "frac_p",
+        "frac_p*frac_bits",
+        "frac_ratio",
+    ]
     for input_dtype in input_dtypes:
-        x = torch.randn(1024, 1024, device=DEVICE, dtype=input_dtype)
+        x = torch.randn(M, M, device=DEVICE, dtype=input_dtype)
         cur_try = 0
-        for exp_p, frac_p in s_exp_halves_frac_halves:
+        for exp_p, frac_p in tqdm.tqdm(s_exp_halves_frac_halves):
             exp_halves = find_nearest_prob_n_halves(exp_p)
             frac_halves = find_nearest_prob_n_halves(frac_p)
-            seed_exp, seed_frac = 0, 0
-            logger.info(
-                f"====== input_dtype = {input_dtype}, exp_p = {exp_p}, frac_p = {frac_p}, exp_halves = {exp_halves}, frac_halves = {frac_halves} ====="
-            )
+            seed_exp, seed_frac = 42, 42
             while True:
                 out, seed_exp, seed_frac = random_bitflip_fn(
                     x,
@@ -64,13 +87,27 @@ def test_random_bitflip_forward_fully_activated():
                 assert out.shape == x.shape
                 find_bitflip = not torch.equal(x, out)
                 if find_bitflip:
-                    mismatch_rate = calculate_bit_mismatch_rate(x, out)
-                    logger.info(f"mismatch_rate: {mismatch_rate}")
+                    mismatch_rate = calculate_bit_mismatch_rate(x, out, num_workers=num_workers)
+                    rows.append(
+                        [
+                            input_dtype,
+                            exp_halves,
+                            exp_p,
+                            round(exp_p * dtype2exp_bits[input_dtype] * x.numel()),
+                            mismatch_rate["sign_exp"],
+                            frac_halves,
+                            frac_p,
+                            round(frac_p * dtype2frac_bits[input_dtype] * x.numel()),
+                            mismatch_rate["frac"],
+                        ]
+                    )
                     break
                 cur_try += 1
                 if cur_try >= max_tries:
                     logger.error(f"Could not find a bitflip in {max_tries} tries")
                     break
+
+    logger.info("\n" + tabulate.tabulate(rows, headers=headers, tablefmt="pretty"))
 
 
 @torch.no_grad()
@@ -125,7 +162,7 @@ def test_random_bitflip_fn_backward():
 if __name__ == "__main__":
     set_logging_verbosity("info")
     torch.set_printoptions(linewidth=120)
-    test_random_bitflip_forward_simple()
+    # test_random_bitflip_forward_simple()
     test_random_bitflip_forward_fully_activated()
-    test_random_bitflip_forward_zero_outed()
-    test_random_bitflip_fn_backward()
+    # test_random_bitflip_forward_zero_outed()
+    # test_random_bitflip_fn_backward()
