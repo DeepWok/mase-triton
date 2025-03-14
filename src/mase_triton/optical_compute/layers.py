@@ -27,21 +27,17 @@ class OpticalComputeQLinear(torch.nn.Linear):
         self.num_samples_to_track = q_samples_to_track
         self.stat_smooth_factor = q_smooth_factor
         self.bypass = q_bypass
-
         # fmt: off
         self.q_min_max_quantile = [q_min_quantile, q_max_quantile]
-        # self.register_buffer("q_min_max_quantile", torch.tensor([q_min_quantile, q_max_quantile], device=device, dtype=torch.float, requires_grad=False))
         self.register_buffer("x_running_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype, requires_grad=False))
         self.register_buffer("w_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype, requires_grad=False))
         self.register_buffer("out_running_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype, requires_grad=False))
         self.register_buffer("q_num_tracked_samples", torch.tensor(0, device=device, dtype=torch.int64, requires_grad=False))
         # fmt: on
-        # self.q_min_max_quantile: Tensor
         self.x_running_min_max: Tensor
         self.w_min_max: Tensor
         self.out_running_min_max: Tensor
         self.q_num_tracked_samples: Tensor
-
         self.seed = q_init_seed
 
     @torch.no_grad()

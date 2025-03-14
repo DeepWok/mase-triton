@@ -1,3 +1,7 @@
+"""
+Optical Transformers: https://arxiv.org/abs/2302.10360
+"""
+
 from typing import Literal
 
 import torch
