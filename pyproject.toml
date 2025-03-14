@@ -24,6 +24,7 @@
         { include-group="lint" },
         { include-group="build" },
         { include-group="fix" },
+        { include-group="utils" },
     ]
     basic=["numpy>=2.2.3", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
     test=["pytest"]
@@ -32,6 +33,7 @@
     fix=["ipdb", "ipython"]
     release=["packaging>=24.2", "twine>=6.1.0"]
     build=["build>=1.2.2"]
+    utils=["tabulate", "just-rust", "tqdm"]
 
 [tool.hatch]
     version.path="src/mase_triton/about.py"
