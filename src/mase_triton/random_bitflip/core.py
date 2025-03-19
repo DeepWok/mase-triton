@@ -225,6 +225,8 @@ def _get_philox_n_rounds(n_halves: int):
     | torch.float16 |      31      | 4.656612873077393e-10  |       0        |          0.0           |      31       | 4.656612873077393e-10  |        0         | 2.384185793236071e-08  |
     +---------------+--------------+------------------------+----------------+------------------------+---------------+------------------------+------------------+------------------------+
     """
+    if n_halves is None:
+        return 0
     if n_halves < 13:
         return 10
     elif n_halves < 19:
@@ -363,6 +365,8 @@ def _random_bitflip_zero_outed_backward_kernel(
     INPUT_DTYPE: tl.constexpr,
     BIN_DTYPE: tl.constexpr,
     GRAD_DTYPE: tl.constexpr,
+    EXP_PHILOX_N_ROUNDS: tl.constexpr,
+    FRAC_PHILOX_N_ROUNDS: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -374,14 +378,14 @@ def _random_bitflip_zero_outed_backward_kernel(
     # random flip using mask: https://stackoverflow.com/a/35796081
     if not SKIP_EXP_FLIP:
         bits_to_flip = ~tl.zeros(x.shape, dtype=BIN_DTYPE)  # all bits set to 1
-        bits_to_flip = _cta_random_flip(bits_to_flip, offsets, exp_halves, seed_exp, BIN_DTYPE)
+        bits_to_flip = _cta_random_flip(bits_to_flip, offsets, exp_halves, seed_exp, BIN_DTYPE, EXP_PHILOX_N_ROUNDS)
         exp_mask = _create_sign_exp_mask(INPUT_DTYPE)
         x = x ^ (bits_to_flip & exp_mask)
 
     # flip frac bits
     if not SKIP_FRAC_FLIP:
         bits_to_flip = ~tl.zeros(x.shape, dtype=BIN_DTYPE)  # all bits set to 1
-        bits_to_flip = _cta_random_flip(bits_to_flip, offsets, frac_halves, seed_frac, BIN_DTYPE)
+        bits_to_flip = _cta_random_flip(bits_to_flip, offsets, frac_halves, seed_frac, BIN_DTYPE, FRAC_PHILOX_N_ROUNDS)
         frac_mask = _create_frac_mask(INPUT_DTYPE)
         x = x ^ (bits_to_flip & frac_mask)
 
@@ -441,6 +445,8 @@ def _random_bitflip_backward(
                 INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
                 BIN_DTYPE=BIT_FLIP_DTYPE_MAP[x.dtype],
                 GRAD_DTYPE=TORCH_DTYPE_TO_TRITON[grad_y.dtype],
+                EXP_PHILOX_N_ROUNDS=_get_philox_n_rounds(exp_halves),
+                FRAC_PHILOX_N_ROUNDS=_get_philox_n_rounds(frac_halves),
             )
         else:
             grad_x = grad_y.clone()
