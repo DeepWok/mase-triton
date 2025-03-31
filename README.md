@@ -1,5 +1,7 @@
 # MASE-Triton
 
+Software-emulation & acceleration triton kernels for [MASE](https://github.com/DeepWok/mase).
+
 ## Install
 
 ### PyPI

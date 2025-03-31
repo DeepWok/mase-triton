@@ -1,8 +1,10 @@
+import os
 import logging
 import tabulate
 import tqdm
 
 import torch
+import pytest
 
 from mase_triton.random_bitflip import (
     find_nearest_prob_n_halves,
@@ -37,8 +39,35 @@ def test_random_bitflip_forward_simple():
     logger.info(f"seed_exp: {seed_exp}, seed_frac: {seed_frac}")
 
 
-@torch.no_grad()
+@pytest.mark.slow
+def test_random_bitflip_forward_fully_activated_slow():
+    helper_random_bitflip_forward_fully_activated(
+        input_dtypes=[torch.float16, torch.bfloat16, torch.float32],
+        s_exp_halves_frac_halves=[(0.5**n, 0.5**n) for n in range(1, 25)],
+        M=2048,
+        max_tries=1000,
+        num_workers=min(16, os.cpu_count() // 2),
+    )
+
+
 def test_random_bitflip_forward_fully_activated():
+    helper_random_bitflip_forward_fully_activated(
+        input_dtypes=[torch.float16],
+        s_exp_halves_frac_halves=[(0.5**n, 0.5**n) for n in range(1, 8)],
+        M=2048,
+        max_tries=1000,
+        num_workers=min(16, os.cpu_count() // 2),
+    )
+
+
+@torch.no_grad()
+def helper_random_bitflip_forward_fully_activated(
+    input_dtypes: tuple[torch.dtype],
+    s_exp_halves_frac_halves: tuple[tuple[float, float]],
+    M: int = 2048,
+    max_tries: int = 1000,
+    num_workers: int = 4,
+):
     dtype2exp_bits = {
         torch.float32: 9,
         torch.float16: 6,
@@ -50,11 +79,10 @@ def test_random_bitflip_forward_fully_activated():
         torch.bfloat16: 7,
     }
     num_workers = 16
-    # input_dtypes = [torch.float32, torch.float16, torch.bfloat16]
-    input_dtypes = [torch.float16]
-    s_exp_halves_frac_halves = [(0.5**n, 0.5**n) for n in range(1, 32)]
-    M = 2048
-    max_tries = 1000
+    # input_dtypes = [torch.float16, torch.bfloat16, torch.float32]
+    # s_exp_halves_frac_halves = [(0.5**n, 0.5**n) for n in range(1, 25)]
+    # M = 2048
+    # max_tries = 1000
     rows = []
     headers = [
         "input_dtype",
