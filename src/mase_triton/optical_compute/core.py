@@ -86,17 +86,17 @@ def _optical_quantize_forward_kernel(
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::optical_quantized_forward",
+    f"{PACKAGE_NAME}::optical_compute_quantize_fn",
     mutates_args={},
 )
-def optical_compute_quantized_forward_fn(
+def optical_compute_quantize_fn(
     x: Tensor,
+    seed: int,
     quant_levels: int,
     min_val: float,
     max_val: float,
     lut_min: float | None,
     quant_mode: str,
-    seed: int,
 ) -> tuple[Tensor, int]:
     assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {x.dtype}"
     assert x.is_cuda, "Input tensor must be on CUDA device"
@@ -122,26 +122,24 @@ def optical_compute_quantized_forward_fn(
         QUANT_MODE=quant_mode,
         ENABLE_LUT_MIN=enable_lut_min,
         INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
-        # BLOCK_SIZE=128,
     )
 
     if quant_mode == "rand":
-        seed = seed + 1
+        seed += 1
     return output, seed
 
 
-@torch.library.register_fake(f"{PACKAGE_NAME}::optical_quantized_forward")
+@torch.library.register_fake(f"{PACKAGE_NAME}::optical_compute_quantize_fn")
 def _optical_quantize_forward_fake(
     x: Tensor,
+    seed: int,
     quant_levels: int,
     min_val: float,
     max_val: float,
     lut_min: float | None,
     quant_mode: Literal["det", "rand"],
-    seed: int,
 ) -> tuple[Tensor, int]:
     output = torch.empty_like(x, dtype=x.dtype)
-    seed = seed + 1
     return output, seed
 
 
@@ -153,24 +151,23 @@ def _optical_quantize_setup_context(ctx, inputs, output):
     return None
 
 
-@optical_compute_quantized_forward_fn.register_kernel("cpu")
+@optical_compute_quantize_fn.register_kernel("cpu")
 def _optical_quantize_forward_cpu(
     x: Tensor,
+    seed: int,
     quant_levels: int,
     min_val: float,
     max_val: float,
     lut_min: float | None,
     quant_mode: str,
-    seed: int,
-) -> tuple[Tensor, int]:
+) -> Tensor:
     # TODO: Implement CPU kernel use torch API
     raise NotImplementedError("CPU kernel is not implemented")
 
 
-optical_compute_quantized_forward_fn.register_autograd(
+optical_compute_quantize_fn.register_autograd(
     _optical_quantize_backward_wrapper,
     setup_context=_optical_quantize_setup_context,
 )
 
-
-__all__ = ["optical_compute_quantized_forward_fn"]
+__all__ = ["optical_compute_quantize_fn"]

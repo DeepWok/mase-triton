@@ -4,7 +4,7 @@ import pytest
 import torch
 import numpy as np
 
-from mase_triton.optical_compute.layers import OpticalComputeQLinear
+from mase_triton.optical_compute.layers import OpticalComputeLinear
 from mase_triton.about import PACKAGE_NAME
 from mase_triton.utils.deps import all_packages_are_available
 from mase_triton.logging import set_logging_verbosity
@@ -17,7 +17,7 @@ logger = logging.getLogger(f"{PACKAGE_NAME}.test.{__name__}")
 def test_optical_compute_quantized_linear_simple():
     in_features = 32
     out_features = 8
-    fc = OpticalComputeQLinear(
+    fc = OpticalComputeLinear(
         in_features=in_features,
         out_features=out_features,
         bias=False,
@@ -38,7 +38,7 @@ def test_optical_compute_quantized_linear_forward_error():
     in_features = 32
     out_features = 8
     fc_baseline = torch.nn.Linear(in_features, out_features, bias=False)
-    fc_optical = OpticalComputeQLinear.from_linear(fc_baseline)
+    fc_optical = OpticalComputeLinear.from_linear(fc_baseline)
     x = torch.rand(8, in_features, device=DEVICE, dtype=torch.float32)
     x = x * 2 - 1
     fc_baseline.to(DEVICE)
@@ -74,9 +74,9 @@ def test_optical_compute_quantized_linear_mnist():
     class NetOptical(torch.nn.Module):
         def __init__(self, in_features, hidden_size_1, hidden_size_2, out_features):
             super().__init__()
-            self.fc1 = OpticalComputeQLinear(in_features=in_features, out_features=hidden_size_1, bias=True)
-            self.fc2 = OpticalComputeQLinear(in_features=hidden_size_1, out_features=hidden_size_2, bias=True)
-            self.fc3 = OpticalComputeQLinear(in_features=hidden_size_2, out_features=out_features, bias=True)
+            self.fc1 = OpticalComputeLinear(in_features=in_features, out_features=hidden_size_1, bias=True)
+            self.fc2 = OpticalComputeLinear(in_features=hidden_size_1, out_features=hidden_size_2, bias=True)
+            self.fc3 = OpticalComputeLinear(in_features=hidden_size_2, out_features=out_features, bias=True)
 
         def forward(self, x):
             x = x.view(-1, 784)

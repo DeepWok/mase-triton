@@ -2,7 +2,7 @@ import logging
 
 import torch
 
-from mase_triton.optical_compute.core import optical_compute_quantized_forward_fn
+from mase_triton.optical_compute.core import optical_compute_quantize_fn
 from mase_triton.about import PACKAGE_NAME
 
 DEVICE = "cuda"
@@ -19,7 +19,7 @@ def test_optical_compute_quantized_forward_fn_simple():
     lut_min = 0.01
     seed = 0
 
-    out, seed_out = optical_compute_quantized_forward_fn(
+    out, seed_out = optical_compute_quantize_fn(
         x,
         quant_levels=quant_levels,
         min_val=min_val,
@@ -45,7 +45,7 @@ def test_optical_compute_quantized_backward_fn_simple():
     x = torch.rand(256, device=DEVICE, dtype=torch.float32)
     x = x * 2 - 1
     x.requires_grad_()
-    out, seed_out = optical_compute_quantized_forward_fn(
+    out, seed_out = optical_compute_quantize_fn(
         x,
         quant_levels=quant_levels,
         min_val=min_val,
