@@ -1,10 +1,16 @@
 # MASE-Triton
 
+Software-emulation & acceleration triton kernels for [MASE](https://github.com/DeepWok/mase).
+
 ## Install
+
+Please ensure you are using Python 3.11 or later, and run MASE-Triton on **CUDA-enabled GPU**.
 
 ### PyPI
 
-`🚧 TODO`
+```bash
+pip install mase-triton
+```
 
 ### Build from Source
 

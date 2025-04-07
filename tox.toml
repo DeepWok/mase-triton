@@ -1,54 +1,49 @@
-requires = ["tox>=4.24.1"]
-env_list= ["py3.11","dev"]
+requires=["tox>=4.24.1"]
+env_list=["py3.11", "dev"]
 
 [env_run_base]
-description = "Run the tests with pytest under {env_name}"
-package = "wheel"
-# wheel_build_env = ".pkg"
-dependency_groups = ["base"]
-commands = [
-    [
-        "pytest",
-        { replace = "posargs", extend = true}
-    ]
-]
+    description="Run the tests with pytest under {env_name}"
+    package="wheel"
+    # wheel_build_env = ".pkg"
+    dependency_groups=["base"]
+    commands=[["pytest", { replace="posargs", extend=true }]]
 
 [env_pkg_base]
-description = "Package the project into a wheel"
-package = "wheel"
-dependency_groups = ["basic", "build"]
-commands = [
-    [
-        "python",
-        "-m",
-        "build",
-        "--wheel",
-    ]
-]
+    description="Package the project into a wheel"
+    package="wheel"
+    dependency_groups=["base"]
+    commands=[["python", "-m", "build", "--wheel"]]
 
 [env.dev]
-description = "Development environment"
-package = "editable"
-dependency_groups = ["dev"]
-commands = []
+    description="Development environment"
+    package="editable"
+    dependency_groups=["dev"]
+    commands=[]
 
 [env.build]
-description = "Package the project into a wheel"
-package = "wheel"
-skip_install = true
-dependency_groups = ["build"]
-commands = [
-    [
-        "python",
-        "-m",
-        "build",
-        "--wheel",
-    ],
-]
+    description="Package the project into a wheel"
+    package="wheel"
+    skip_install=true
+    dependency_groups=["base"]
+    commands=[["python", "-m", "build", "--wheel"]]
+
+[env.publish2test]
+    description="Package the project into a wheel, then publish to test PyPI"
+    package="wheel"
+    skip_install=true
+    dependency_groups=["base", "publish"]
+    commands=[["python", "-m", "build", "--wheel"], ["twine", "upload", "--repository", "testpypi", "dist/*"]]
+
+[env.publish]
+    description="Package the project into a wheel, then publish to PyPI"
+    package="wheel"
+    skip_install=true
+    dependency_groups=["base", "publish"]
+    commands=[["python", "-m", "build", "--wheel"], ["twine", "upload", "--repository", "testpypi", "dist/*"]]
 
 
 [pytest]
-testpaths = ["test"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
+    testpaths=["test"]
+    python_files=["test_*.py"]
+    python_classes=["Test*"]
+    python_functions=["test_*"]

@@ -17,7 +17,13 @@
     # optional-dependencies.hf=["transformers==4.49.0", "datasets", "accelerate"]
 
 [dependency-groups]
-    base=[{ include-group="basic" }, { include-group="test" }, { include-group="lint" }, { include-group="build" }]
+    base=[
+        { include-group="basic" },
+        { include-group="test" },
+        { include-group="lint" },
+        { include-group="build" },
+        { include-group="utils" },
+    ]
     dev=[
         { include-group="basic" },
         { include-group="test" },
@@ -31,9 +37,10 @@
     # hf=["transformers==4.49.0", "datasets", "accelerate"]
     lint=["black"]
     fix=["ipdb", "ipython"]
-    release=["packaging>=24.2", "twine>=6.1.0"]
+    # release=["packaging>=24.2", "twine>=6.1.0"]
     build=["build>=1.2.2"]
-    utils=["tabulate", "just-rust", "tqdm"]
+    publish=["twine", "mkdocs-material"]
+    utils=["tabulate", "tqdm"]
 
 [tool.hatch]
     version.path="src/mase_triton/about.py"
