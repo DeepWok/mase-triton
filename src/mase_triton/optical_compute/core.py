@@ -503,6 +503,13 @@ optical_compute_quantized_linear_fn.register_autograd(
 
 
 class OpticalTransformerFunctions:
+    """
+    OpticalTransformerFunctions provides a collection of static methods for simulating
+    optical transformer operations accelerated by Triton kernels.
+
+    - Optical Transformers: https://arxiv.org/abs/2302.10360
+    """
+
     kernels = {
         "optical_compute_quantize_forward_kernel": _optical_compute_quantize_forward_kernel,
         "optical_compute_quantized_linear_forward_kernel": _optical_quantized_linear_forward_kernel,
@@ -516,8 +523,26 @@ class OpticalTransformerFunctions:
         min_val: float,
         max_val: float,
         lut_min: float | None,
-        quant_mode: str,
+        quant_mode: Literal["det", "rand"],
     ) -> tuple[Tensor, int]:
+        """
+        Applies quantization to the input tensor using the specified parameters.
+
+        Args:
+            x (Tensor): The input tensor to be quantized.
+            seed (int): The random seed for reproducibility in quantization.
+            quant_levels (int): The number of quantization levels to use.
+            min_val (float): The minimum value for the quantization range.
+            max_val (float): The maximum value for the quantization range.
+            lut_min (float | None): The minimum value for the weight lookup table (LUT),
+                if applicable. If None, no LUT is used.
+            quant_mode (str): The quantization mode to use. Can be either "det" for
+                deterministic quantization or "rand" for quantization + random noise.
+
+        Returns:
+            tuple[Tensor, int]: A tuple containing the quantized tensor and an
+            integer representing the updated seed.
+        """
         return optical_compute_quantize_fn(
             x=x,
             seed=seed,
@@ -544,6 +569,31 @@ class OpticalTransformerFunctions:
         q_seed: int,
         skip_quantize: bool = False,
     ) -> tuple[Tensor, int]:
+        """
+        Fused quantized linear operation: Quantize input, quantize weight with w_lut_min (if provided),
+        linear matmul, and quantize output + add noise.
+
+        Args:
+            x (Tensor): The input tensor to be transformed.
+            weight (Tensor): The weight tensor for the linear transformation.
+            bias (Tensor | None): The bias tensor for the linear transformation.
+            x_min (float): The minimum value for the input quantization range.
+            x_max (float): The maximum value for the input quantization range.
+            w_min (float): The minimum value for the weight quantization range.
+            w_max (float): The maximum value for the weight quantization range.
+            w_lut_min (float | None): The minimum value for the weight lookup table (LUT),
+                if applicable. If None, no LUT is used.
+            o_min (float): The minimum value for the output quantization range.
+            o_max (float): The maximum value for the output quantization range.
+            q_levels (int): The number of quantization levels to use.
+            q_seed (int): The random seed for reproducibility in quantization.
+            skip_quantize (bool, optional): Whether to skip quantization. Defaults to False.
+                Useful for debugging.
+
+        Returns:
+            tuple[Tensor, int]: A tuple containing the transformed tensor and an
+            integer representing the updated seed.
+        """
         return optical_compute_quantized_linear_fn(
             x=x,
             weight=weight,

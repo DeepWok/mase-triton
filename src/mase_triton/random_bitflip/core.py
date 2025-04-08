@@ -533,15 +533,11 @@ class RandomBitFlipFunctions:
         """Calculate the flip probability from the number of halves, prob = 0.5^prob_halves.
         Note that current flip kernel uses bitwise-or only (refer to _cta_random_flip).
 
-        Parameters
-        ----------
-        prob_halves : int
-            the number of halves = 0.5^prob_halves, should be a positive integer.
+        Args:
+            prob_halves (int | None): The number of halves to calculate the flip probability.
 
-        Returns
-        -------
-        float
-            the flip probability
+        Returns:
+            float | None: The calculated flip probability, or None if prob_halves is None.
         """
         return calculate_flip_probability(prob_halves=prob_halves)
 
