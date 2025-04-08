@@ -9,19 +9,6 @@ from ..about import PACKAGE_NAME
 
 
 def calculate_flip_probability(prob_halves: int | None) -> float | None:
-    """Calculate the flip probability from the number of halves, prob = 0.5^prob_halves.
-    Note that current flip kernel uses bitwise-or only (refer to _cta_random_flip).
-
-    Parameters
-    ----------
-    prob_halves : int
-        the number of halves = 0.5^prob_halves, should be a positive integer.
-
-    Returns
-    -------
-    float
-        the flip probability
-    """
     if prob_halves is None:
         return None
     else:
@@ -30,17 +17,6 @@ def calculate_flip_probability(prob_halves: int | None) -> float | None:
 
 
 def find_nearest_prob_n_halves(prob: float | None) -> int | None:
-    """
-    Calculate the smallest integer n such that (1/2)^n is less than or equal to the given probability.
-
-    This function computes the smallest number of halvings (n) required for the probability to be less than or equal to the given probability.
-
-    Args:
-        prob (float): The probability value for which to find the nearest number of halvings.
-
-    Returns:
-        int: The smallest integer n such that (1/2)^n <= prob.
-    """
     if prob is None:
         return None
     else:
@@ -528,8 +504,58 @@ def _random_bitflip_backward_cpu(
     raise NotImplementedError("CPU version of random bit flip backward is not implemented yet.")
 
 
-__all__ = [
-    "random_bitflip_fn",
-    "find_nearest_prob_n_halves",
-    "calculate_flip_probability",
-]
+class RandomBitFlipFunctions:
+    kernels = {
+        "random_bitflip_forward_kernel": _random_bitflip_forward_kernel,
+        "random_bitflip_backward_kernel": _random_bitflip_zero_outed_backward_kernel,
+    }
+
+    @staticmethod
+    def random_bitflip_fn(
+        x: Tensor,
+        exp_halves: int | None,
+        frac_halves: int | None,
+        seed_exp: int,
+        seed_frac: int,
+        zero_out_threshold: float | None,
+    ) -> tuple[Tensor, int, int]:
+        return random_bitflip_fn(
+            x=x,
+            exp_halves=exp_halves,
+            frac_halves=frac_halves,
+            seed_exp=seed_exp,
+            seed_frac=seed_frac,
+            zero_out_threshold=zero_out_threshold,
+        )
+
+    @staticmethod
+    def calculate_flip_probability(prob_halves: int | None) -> float | None:
+        """Calculate the flip probability from the number of halves, prob = 0.5^prob_halves.
+        Note that current flip kernel uses bitwise-or only (refer to _cta_random_flip).
+
+        Parameters
+        ----------
+        prob_halves : int
+            the number of halves = 0.5^prob_halves, should be a positive integer.
+
+        Returns
+        -------
+        float
+            the flip probability
+        """
+        return calculate_flip_probability(prob_halves=prob_halves)
+
+    @staticmethod
+    def find_nearest_prob_n_halves(prob: float | None) -> int | None:
+        """
+        Calculate the smallest integer n such that (1/2)^n is less than or equal to the given probability.
+
+        This function computes the smallest number of halvings (n) required for the probability to be less than or equal to the given probability.
+
+        Args:
+            prob (float): The probability value for which to find the nearest number of halvings.
+
+        Returns:
+            int: The smallest integer n such that (1/2)^n <= prob.
+        """
+        return find_nearest_prob_n_halves(prob=prob)

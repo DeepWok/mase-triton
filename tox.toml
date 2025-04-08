@@ -47,3 +47,5 @@ env_list=["py3.11", "dev"]
     python_files=["test_*.py"]
     python_classes=["Test*"]
     python_functions=["test_*"]
+    [pytest.markers]
+        slow="mark test as slow"

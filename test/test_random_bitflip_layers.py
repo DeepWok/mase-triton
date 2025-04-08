@@ -1,6 +1,6 @@
 import torch
 
-from mase_triton.random_bitflip import (
+from mase_triton.random_bitflip.layers import (
     RandomBitFlipDropout,
     RandomBitFlipLinear,
 )

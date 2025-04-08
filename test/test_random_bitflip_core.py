@@ -5,10 +5,8 @@ import tqdm
 import torch
 import pytest
 
-from mase_triton.random_bitflip import (
-    find_nearest_prob_n_halves,
-    random_bitflip_fn,
-)
+
+from mase_triton.random_bitflip import RandomBitFlipFunctions as RBFunctions
 from mase_triton.random_bitflip.utils import calculate_bit_mismatch_rate
 from mase_triton.utils.bit_repr import get_binary_repr
 from mase_triton.logging import set_logging_verbosity, test_logger
@@ -24,7 +22,7 @@ def test_random_bitflip_forward_simple():
     exp_halves = 4
     frac_halves = 1
     seed_exp, seed_frac = 0, 0
-    out, seed_exp, seed_frac = random_bitflip_fn(
+    out, seed_exp, seed_frac = RBFunctions.random_bitflip_fn(
         x,
         exp_halves=exp_halves,
         frac_halves=frac_halves,
@@ -97,11 +95,11 @@ def helper_random_bitflip_forward_fully_activated(
         x = torch.randn(M, M, device=DEVICE, dtype=input_dtype)
         cur_try = 0
         for exp_p, frac_p in tqdm.tqdm(s_exp_halves_frac_halves):
-            exp_halves = find_nearest_prob_n_halves(exp_p)
-            frac_halves = find_nearest_prob_n_halves(frac_p)
+            exp_halves = RBFunctions.find_nearest_prob_n_halves(exp_p)
+            frac_halves = RBFunctions.find_nearest_prob_n_halves(frac_p)
             seed_exp, seed_frac = 42, 42
             while True:
-                out, seed_exp, seed_frac = random_bitflip_fn(
+                out, seed_exp, seed_frac = RBFunctions.random_bitflip_fn(
                     x,
                     exp_halves=exp_halves,
                     frac_halves=frac_halves,
@@ -143,7 +141,7 @@ def test_random_bitflip_forward_zero_outed():
         frac_halves = 2
         seed_exp, seed_frac = 0, 0
         zero_out_threshold = 200.0
-        out, seed_exp, seed_frac = random_bitflip_fn(
+        out, seed_exp, seed_frac = RBFunctions.random_bitflip_fn(
             x,
             exp_halves=exp_halves,
             frac_halves=frac_halves,
@@ -169,7 +167,7 @@ def test_random_bitflip_fn_backward():
             frac_halves = 2
             seed_exp, seed_frac = 0, 0
             zero_out_threshold = 200.0
-            out, seed_exp, seed_frac = random_bitflip_fn(
+            out, seed_exp, seed_frac = RBFunctions.random_bitflip_fn(
                 x,
                 exp_halves=exp_halves,
                 frac_halves=frac_halves,
@@ -188,7 +186,7 @@ def test_random_bitflip_fn_backward():
 if __name__ == "__main__":
     set_logging_verbosity("info")
     torch.set_printoptions(linewidth=120)
-    # test_random_bitflip_forward_simple()
-    test_random_bitflip_forward_fully_activated()
+    test_random_bitflip_forward_simple()
+    # test_random_bitflip_forward_fully_activated()
     # test_random_bitflip_forward_zero_outed()
     # test_random_bitflip_fn_backward()

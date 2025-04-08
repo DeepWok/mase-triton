@@ -29,7 +29,7 @@ def _get_autotune_configs_optical_quantize_forward_kernel():
     use_cuda_graph=False,
 )
 @triton.jit
-def _optical_quantize_forward_kernel(
+def _optical_compute_quantize_forward_kernel(
     x_ptr,
     output_ptr,
     n_elements,
@@ -110,7 +110,7 @@ def optical_compute_quantize_fn(
     n_elements = x.numel()
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-    _optical_quantize_forward_kernel[grid](
+    _optical_compute_quantize_forward_kernel[grid](
         x,
         output,
         n_elements=n_elements,
@@ -502,7 +502,60 @@ optical_compute_quantized_linear_fn.register_autograd(
 )
 
 
-__all__ = [
-    "optical_compute_quantized_linear_fn",
-    "optical_compute_quantize_fn",
-]
+class OpticalTransformerFunctions:
+    kernels = {
+        "optical_compute_quantize_forward_kernel": _optical_compute_quantize_forward_kernel,
+        "optical_compute_quantized_linear_forward_kernel": _optical_quantized_linear_forward_kernel,
+    }
+
+    @staticmethod
+    def optical_compute_quantize_fn(
+        x: Tensor,
+        seed: int,
+        quant_levels: int,
+        min_val: float,
+        max_val: float,
+        lut_min: float | None,
+        quant_mode: str,
+    ) -> tuple[Tensor, int]:
+        return optical_compute_quantize_fn(
+            x=x,
+            seed=seed,
+            quant_levels=quant_levels,
+            min_val=min_val,
+            max_val=max_val,
+            lut_min=lut_min,
+            quant_mode=quant_mode,
+        )
+
+    @staticmethod
+    def optical_compute_quantized_linear_fn(
+        x: Tensor,
+        weight: Tensor,
+        bias: Tensor | None,
+        x_min: float,
+        x_max: float,
+        w_min: float,
+        w_max: float,
+        w_lut_min: float | None,
+        o_min: float,
+        o_max: float,
+        q_levels: int,
+        q_seed: int,
+        skip_quantize: bool = False,
+    ) -> tuple[Tensor, int]:
+        return optical_compute_quantized_linear_fn(
+            x=x,
+            weight=weight,
+            bias=bias,
+            x_min=x_min,
+            x_max=x_max,
+            w_min=w_min,
+            w_max=w_max,
+            w_lut_min=w_lut_min,
+            o_min=o_min,
+            o_max=o_max,
+            q_levels=q_levels,
+            q_seed=q_seed,
+            skip_quantize=skip_quantize,
+        )

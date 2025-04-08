@@ -1,6 +1,6 @@
 import torch
 
-from mase_triton.optical_compute.core import optical_compute_quantize_fn, optical_compute_quantized_linear_fn
+from mase_triton.optical_compute import OpticalTransformerFunctions as OTFunctions
 from mase_triton.logging import test_logger, set_logging_verbosity
 
 DEVICE = "cuda"
@@ -17,7 +17,7 @@ def test_optical_compute_quantized_forward_fn_simple():
     lut_min = 0.01
     seed = 0
 
-    out, seed_out = optical_compute_quantize_fn(
+    out, seed_out = OTFunctions.optical_compute_quantize_fn(
         x,
         quant_levels=quant_levels,
         min_val=min_val,
@@ -41,7 +41,7 @@ def test_optical_compute_quantized_backward_fn_simple():
     x = torch.rand(256, device=DEVICE, dtype=torch.float32)
     x = x * 2 - 1
     x.requires_grad_()
-    out, seed_out = optical_compute_quantize_fn(
+    out, seed_out = OTFunctions.optical_compute_quantize_fn(
         x,
         quant_levels=quant_levels,
         min_val=min_val,
@@ -56,13 +56,13 @@ def test_optical_compute_quantized_backward_fn_simple():
     logger.info(f"Identical gradients test passed")
 
 
-def test_optical_compute_quantized_matmul_forward_fn_skip_quantize():
+def test_optical_compute_quantized_linear_forward_fn_skip_quantize():
     x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16)
     w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16)
     bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
 
     out_ref = torch.matmul(x, w.T) + bias if bias is not None else torch.matmul(x, w.T)
-    out, _ = optical_compute_quantized_linear_fn(
+    out, _ = OTFunctions.optical_compute_quantized_linear_fn(
         x,
         w,
         bias,
@@ -81,13 +81,13 @@ def test_optical_compute_quantized_matmul_forward_fn_skip_quantize():
     logger.info("Test passed: skip_quantize=True")
 
 
-def test_optical_compute_quantized_matmul_forward_fn():
+def test_optical_compute_quantized_linear_forward_fn():
     x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
     w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
     bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
 
     out_ref = torch.matmul(x, w.T) + bias if bias is not None else torch.matmul(x, w.T)
-    out, _ = optical_compute_quantized_linear_fn(
+    out, _ = OTFunctions.optical_compute_quantized_linear_fn(
         x,
         w,
         bias,
@@ -107,7 +107,7 @@ def test_optical_compute_quantized_matmul_forward_fn():
     logger.info("Test passed: output is close to reference")
 
 
-def test_optical_compute_quantized_matmul_backward_fn():
+def test_optical_compute_quantized_linear_backward_fn():
     x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
     w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
     bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
@@ -115,7 +115,7 @@ def test_optical_compute_quantized_matmul_backward_fn():
     x.requires_grad_()
     bias.requires_grad_()
 
-    out, _ = optical_compute_quantized_linear_fn(
+    out, _ = OTFunctions.optical_compute_quantized_linear_fn(
         x,
         w,
         bias,
@@ -139,6 +139,6 @@ if __name__ == "__main__":
     set_logging_verbosity("info")
     test_optical_compute_quantized_forward_fn_simple()
     test_optical_compute_quantized_backward_fn_simple()
-    test_optical_compute_quantized_matmul_forward_fn_skip_quantize()
-    test_optical_compute_quantized_matmul_forward_fn()
-    test_optical_compute_quantized_matmul_backward_fn()
+    test_optical_compute_quantized_linear_forward_fn_skip_quantize()
+    test_optical_compute_quantized_linear_forward_fn()
+    test_optical_compute_quantized_linear_backward_fn()
