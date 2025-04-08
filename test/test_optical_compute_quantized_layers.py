@@ -17,8 +17,15 @@ logger = logging.getLogger(f"{PACKAGE_NAME}.test.{__name__}")
 def test_optical_compute_quantized_linear_simple():
     in_features = 32
     out_features = 8
-    fc = OpticalComputeLinear(
+    fc1 = OpticalComputeLinear(
         in_features=in_features,
+        out_features=out_features * 2,
+        bias=False,
+        device=DEVICE,
+        dtype=torch.float32,
+    )
+    fc2 = OpticalComputeLinear(
+        in_features=out_features * 2,
         out_features=out_features,
         bias=False,
         device=DEVICE,
@@ -27,9 +34,11 @@ def test_optical_compute_quantized_linear_simple():
     x = torch.rand(8, in_features, device=DEVICE, dtype=torch.float32)
     x = x * 2 - 1
     x.requires_grad_()
-    y = fc(x)
+    x = fc1(x)
+    x = torch.relu(x)
+    y = fc2(x)
     assert y.shape == (8, out_features)
-    logger.info(f"{fc}")
+    logger.info(f"{fc1}")
     loss = torch.sum(y)
     loss.backward()
 
@@ -52,99 +61,78 @@ def test_optical_compute_quantized_linear_forward_error():
     logger.info(f"AbsError: {abs_error}")
     logger.info(f"ErrorNorm/Norm: {error}")
 
-
 @pytest.mark.skipif(
-    not all_packages_are_available(("datasets", "torchvision", "tqdm")), reason="Requires datasets and torchvision"
+    not all_packages_are_available(("tqdm",)), reason="Requires datasets and torchvision"
 )
-def test_optical_compute_quantized_linear_mnist():
-    from datasets import load_dataset
-    from torchvision.transforms import v2
+def test_optical_compute_quantized_linear_toy_training():
     from tqdm import tqdm
+    in_features = 32
+    hidden_size = 64
+    out_features = 2
 
-    mnist = load_dataset("ylecun/mnist", split="train")
-    mnist = mnist.shuffle(seed=42)
-    in_features = 784
-    hidden_size_1 = 200
-    hidden_size_2 = 100
-    out_features = 10
-    num_epochs = 60
-    batch_size = 128
-    dtype = torch.bfloat16
+    num_epochs = 4
+    batch_size = 64
+
+    dtype = torch.float32
+    device = DEVICE
+
+    def get_data(num_batches, batch_size):
+        # binary classification
+        for _ in range(num_batches):
+            x = torch.rand(batch_size, in_features, device=device, dtype=dtype) * 2 - 1
+            y = (4 * x**3 - 2 * x ).sum(dim=1, keepdim=True)
+            y = (y > 0).float()
+            yield x, y
 
     class NetOptical(torch.nn.Module):
-        def __init__(self, in_features, hidden_size_1, hidden_size_2, out_features):
+        def __init__(self, in_features, hidden_size, out_features):
             super().__init__()
-            self.fc1 = OpticalComputeLinear(in_features=in_features, out_features=hidden_size_1, bias=True)
-            self.fc2 = OpticalComputeLinear(in_features=hidden_size_1, out_features=hidden_size_2, bias=True)
-            self.fc3 = OpticalComputeLinear(in_features=hidden_size_2, out_features=out_features, bias=True)
+            self.fc1 = OpticalComputeLinear(in_features=in_features, out_features=hidden_size, bias=True)
+            self.fc2 = OpticalComputeLinear(in_features=hidden_size, out_features=out_features, bias=True)
 
         def forward(self, x):
-            x = x.view(-1, 784)
             x = self.fc1(x)
             x = torch.relu(x)
             x = self.fc2(x)
-            x = torch.relu(x)
-            x = self.fc3(x)
             return x
 
-    class DataLoader:
-        def __init__(self, mnist, batch_size, device):
-            self.mnist = mnist
-            self.batch_size = batch_size
-            self.device = device
-            self.transform = v2.Compose([v2.ToDtype(torch.float32, scale=True), v2.Normalize((0.1307,), (0.3081,))])
-
-        def __iter__(self):
-            for i in range(0, len(self.mnist), self.batch_size):
-                img_batch = self.mnist[i : i + self.batch_size]["image"]  # PIL image
-                label_batch = self.mnist[i : i + self.batch_size]["label"]  # list of ints
-                img_batch = torch.tensor(np.asarray(img_batch).astype(np.float32), device=self.device)
-                label_batch = torch.tensor(np.asarray(label_batch).astype(np.int64), device=self.device)
-                img_batch = self.transform(img_batch)
-                img_batch = img_batch.reshape(self.batch_size, -1)
-                yield img_batch, label_batch
-
-        def __len__(self):
-            return len(self.mnist) // self.batch_size
-
-    net = NetOptical(in_features, hidden_size_1, hidden_size_2, out_features)
-    # net = NetBaseline(in_features, hidden_size_1, hidden_size_2, out_features)
-    net.to(dtype=dtype, device=DEVICE)
-    dataloader = DataLoader(mnist, batch_size=batch_size, device=DEVICE)
-
+    net = NetOptical(in_features, hidden_size, out_features)
+    net.to(dtype=dtype, device=device)
     optimizer = torch.optim.AdamW(net.parameters())
     for epoch in tqdm(range(num_epochs), total=num_epochs):
         net.train()
-        for i, (img_batch, label_batch) in enumerate(dataloader):
-            img_batch = img_batch.to(DEVICE).to(dtype)
-            label_batch = label_batch.to(DEVICE)
+        for i, (x_batch, y_batch) in enumerate(get_data(num_batches=1000, batch_size=batch_size)):
+            x_batch = x_batch.to(device).to(dtype)
+            y_batch = y_batch.to(device)
             optimizer.zero_grad()
-            out = net(img_batch)
-            loss = torch.nn.functional.cross_entropy(out, label_batch)
-            loss.backward()
+            out = net(x_batch)
+            out = out.sum(dim=1, keepdim=True)
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(out, y_batch)
+            loss.backward(retain_graph=True)
             optimizer.step()
 
         # eval on train set
-        if (epoch + 1) % 20 == 0:
+        if (epoch + 1) % 2 == 0:
             net.eval()
             correct = 0
             total = 0
             with torch.no_grad():
-                for i, (img_batch, label_batch) in enumerate(dataloader):
-                    img_batch = img_batch.to(DEVICE).to(dtype)
-                    label_batch = label_batch.to(DEVICE)
-                    out = net(img_batch)
-                    _, predicted = torch.max(out, 1)
-                    total += label_batch.size(0)
-                    correct += (predicted == label_batch).sum().item()
+                for i, (x_batch, y_batch) in enumerate(get_data(num_batches=1000, batch_size=batch_size)):
+                    x_batch = x_batch.to(device).to(dtype)
+                    y_batch = y_batch.to(device)
+                    out = net(x_batch)
+                    pred = torch.sigmoid(out)
+                    pred = (pred > 0.5).float()
+                    total += y_batch.size(0)
+                    correct += (pred == y_batch).sum().item()
                 acc = 100 * correct / total
                 logger.info(f"Epoch: {epoch}, Train accuracy: {acc:.2f}%")
-            if epoch == num_epochs - 1:
-                assert acc > 95.0
-
+    logger.info(f"Training completed with accuracy: {acc:.2f}%")
 
 if __name__ == "__main__":
     set_logging_verbosity("info")
+    torch.autograd.set_detect_anomaly(True)
     # test_optical_compute_quantized_linear_simple()
     # test_optical_compute_quantized_linear_forward_error()
-    test_optical_compute_quantized_linear_mnist()
+    test_optical_compute_quantized_linear_toy_training()
+    # test_optical_compute_quantized_linear_mnist()

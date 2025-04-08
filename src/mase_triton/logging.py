@@ -22,8 +22,9 @@ _formatter = colorlog.ColoredFormatter(
     secondary_log_colors={},
     style="%",
 )
-_handler.setFormatter(_formatter)
-root_logger.addHandler(_handler)
+if not root_logger.hasHandlers():
+    _handler.setFormatter(_formatter)
+    root_logger.addHandler(_handler)
 
 
 def set_logging_verbosity(level: Union[int, str]):

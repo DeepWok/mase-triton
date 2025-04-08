@@ -17,7 +17,7 @@ env_list=["py3.11", "dev"]
 [env.dev]
     description="Development environment"
     package="editable"
-    dependency_groups=["dev"]
+    dependency_groups=["dev", "training_utils"]
     commands=[]
 
 [env.build]

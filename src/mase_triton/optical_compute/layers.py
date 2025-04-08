@@ -112,7 +112,8 @@ def _optical_compute_linear_backward(ctx, *grad_output):
 
 class _OpticalComputeLinearFn(torch.autograd.Function):
     @staticmethod
-    def optical_compute_linear_fn(
+    def forward(
+        ctx,
         x: Tensor,
         weight: Tensor,
         bias: Tensor | None,
@@ -126,10 +127,11 @@ class _OpticalComputeLinearFn(torch.autograd.Function):
         stat_smooth_factor: float,
         training: bool,
     ) -> tuple[Tensor, int, Tensor, Tensor, Tensor]:
+        ctx.save_for_backward(x, weight, bias)
         if training:
             x_min_max = _update_stats(x, x_min_max, min_max_quantile, stat_smooth_factor)
             w_min_max = _update_stats(weight, w_min_max, min_max_quantile, stat_smooth_factor)
-        x_q, _ = optical_compute_quantize_fn(
+        x_q, seed = optical_compute_quantize_fn(
             x,
             seed=seed,
             quant_levels=quant_levels,
@@ -138,7 +140,7 @@ class _OpticalComputeLinearFn(torch.autograd.Function):
             lut_min=None,
             quant_mode="det",
         )
-        w_q, _ = optical_compute_quantize_fn(
+        w_q, seed = optical_compute_quantize_fn(
             weight,
             seed=seed,
             quant_levels=quant_levels,
@@ -162,13 +164,7 @@ class _OpticalComputeLinearFn(torch.autograd.Function):
         return out_q, seed, x_min_max, w_min_max, out_min_max
 
     @staticmethod
-    def setup_context(ctx, inputs, output):
-        x = inputs[0]
-        weight = inputs[1]
-        bias = inputs[2]
-        ctx.save_for_backward(x, weight, bias)
-
-    @staticmethod
+    @torch.autograd.function.once_differentiable
     def backward(ctx, *grad_output):
         input, weight, bias = ctx.saved_tensors
         grad_input = grad_weight = grad_bias = None
@@ -305,7 +301,7 @@ class OpticalComputeLinear(torch.nn.Linear):
         return new_fc
 
 
-# class OpticalComputeQLinear(torch.nn.Linear):
+# class OpticalComputeLinear(torch.nn.Linear):
 #     def __init__(
 #         self,
 #         in_features,
@@ -434,7 +430,7 @@ class OpticalComputeLinear(torch.nn.Linear):
 #         q_max_quantile: float = 0.999,
 #         q_init_seed: int = 0,
 #         q_bypass: bool = False,
-#     ) -> "OpticalComputeQLinear":
+#     ) -> "OpticalComputeLinear":
 #         new_fc = cls(
 #             linear.in_features,
 #             linear.out_features,

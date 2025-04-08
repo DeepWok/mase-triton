@@ -41,6 +41,7 @@
     build=["build>=1.2.2"]
     publish=["twine", "mkdocs-material"]
     utils=["tabulate", "tqdm"]
+    training_utils=["datasets", "torchvision"]
 
 [tool.hatch]
     version.path="src/mase_triton/about.py"
