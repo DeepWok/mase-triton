@@ -1,5 +1,4 @@
 import os
-import logging
 import tabulate
 import tqdm
 
@@ -12,10 +11,9 @@ from mase_triton.random_bitflip import (
 )
 from mase_triton.random_bitflip.utils import calculate_bit_mismatch_rate
 from mase_triton.utils.bit_repr import get_binary_repr
-from mase_triton.logging import set_logging_verbosity
-from mase_triton.about import PACKAGE_NAME
+from mase_triton.logging import set_logging_verbosity, test_logger
 
-logger = logging.getLogger(f"{PACKAGE_NAME}.test.{__name__}")
+logger = test_logger.getChild(f"{__name__}")
 
 DEVICE = "cuda"
 

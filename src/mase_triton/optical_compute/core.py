@@ -13,7 +13,7 @@ from ..dtype import TORCH_DTYPE_TO_TRITON
 from ..about import PACKAGE_NAME
 
 
-def _get_autotune_configs_forward_quantize():
+def _get_autotune_configs_optical_quantize_forward_kernel():
     block_sizes = [128, 256, 512, 1024]
     stages = [1, 2, 3, 4]
     configs = []
@@ -24,7 +24,7 @@ def _get_autotune_configs_forward_quantize():
 
 
 @triton.autotune(
-    configs=_get_autotune_configs_forward_quantize(),
+    configs=_get_autotune_configs_optical_quantize_forward_kernel(),
     key=["n_elements"],
     use_cuda_graph=False,
 )
@@ -99,7 +99,7 @@ def optical_compute_quantize_fn(
     quant_mode: str,
 ) -> tuple[Tensor, int]:
     assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {x.dtype}"
-    assert x.is_cuda(), "Input tensor must be on CUDA device"
+    assert x.is_cuda, "Input tensor must be on CUDA device"
     assert quant_mode in ["det", "rand"], f"Unsupported quant_mode {quant_mode}"
     assert lut_min is None or lut_min >= 0.0, "lut_min must be non-negative"
 
@@ -129,8 +129,8 @@ def optical_compute_quantize_fn(
     return output, seed
 
 
-@torch.library.register_fake(f"{PACKAGE_NAME}::optical_compute_quantize_fn")
-def _optical_quantize_forward_fake(
+@optical_compute_quantize_fn.register_fake
+def _optical_quantize_forward_fn_fake(
     x: Tensor,
     seed: int,
     quant_levels: int,
@@ -143,7 +143,7 @@ def _optical_quantize_forward_fake(
     return output, seed
 
 
-def _optical_quantize_backward_wrapper(ctx, *grad_outputs):
+def _optical_quantize_backward(ctx, *grad_outputs):
     return grad_outputs[0], None, None, None, None, None, None
 
 
@@ -152,7 +152,7 @@ def _optical_quantize_setup_context(ctx, inputs, output):
 
 
 @optical_compute_quantize_fn.register_kernel("cpu")
-def _optical_quantize_forward_cpu(
+def _optical_quantize_forward_fn_cpu(
     x: Tensor,
     seed: int,
     quant_levels: int,
@@ -166,14 +166,12 @@ def _optical_quantize_forward_cpu(
 
 
 optical_compute_quantize_fn.register_autograd(
-    _optical_quantize_backward_wrapper,
+    _optical_quantize_backward,
     setup_context=_optical_quantize_setup_context,
 )
 
-__all__ = ["optical_compute_quantize_fn"]
 
-
-def _get_autotune_configs_forward_quantized_matmul():
+def _get_autotune_configs_forward_quantized_linear_kernel():
     return [
         triton.Config(
             {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 8}, num_stages=3, num_warps=8
@@ -251,11 +249,11 @@ def _noisy_quantize(
 
 
 @triton.autotune(
-    configs=_get_autotune_configs_forward_quantized_matmul(),
+    configs=_get_autotune_configs_forward_quantized_linear_kernel(),
     key=["M", "N", "K"],
 )
 @triton.jit
-def _optical_quantized_matmul_forward_kernel(
+def _optical_quantized_linear_forward_kernel(
     a_ptr,
     b_ptr,
     c_ptr,
@@ -365,10 +363,10 @@ def _optical_quantized_matmul_forward_kernel(
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::optical_compute_quantized_matmul_fn",
+    f"{PACKAGE_NAME}::optical_compute_quantized_linear_fn",
     mutates_args={},
 )
-def optical_compute_quantized_matmul_fn(
+def optical_compute_quantized_linear_fn(
     x: Tensor,
     weight: Tensor,
     bias: Tensor | None,
@@ -382,24 +380,21 @@ def optical_compute_quantized_matmul_fn(
     q_levels: int,
     q_seed: int,
     skip_quantize: bool = False,
-) -> Tensor:
+) -> tuple[Tensor, int]:
 
     assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {x.dtype}"
     assert x.is_contiguous(), "Input tensor must be contiguous"
-    assert x.is_cuda, "Input tensor must be on CUDA device"
     assert weight.ndim == 2, f"Weight tensor must be 2D, got {weight.ndim}D"
     assert weight.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {weight.dtype}"
-    assert weight.is_cuda, "Weight tensor must be on CUDA device"
-    assert bias is None or bias.is_cuda, "Bias tensor must be on CUDA device"
 
     ori_x_shape = x.size()
     x = x.reshape(-1, ori_x_shape[-1])
 
     if bias is not None:
-        assert bias.shape[0] == weight.shape[1], f"Bias shape {bias.shape} does not match weight shape {weight.shape}"
+        assert bias.shape[0] == weight.shape[0], f"Bias shape {bias.shape} does not match weight shape {weight.shape}"
 
     M, K = x.shape
-    K2, N = weight.shape
+    N, K2 = weight.shape
     assert K == K2, f"Input shape {x.shape} does not match weight shape {weight.shape}"
 
     if bias is None:
@@ -409,9 +404,9 @@ def optical_compute_quantized_matmul_fn(
 
     grid = lambda meta: (triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),)
 
-    _optical_quantized_matmul_forward_kernel[grid](
+    _optical_quantized_linear_forward_kernel[grid](
         x,
-        weight,
+        weight.T,
         output,
         bias if bias is not None else x,
         M=M,
@@ -428,8 +423,8 @@ def optical_compute_quantized_matmul_fn(
         seed=q_seed,
         stride_am=x.stride(0),
         stride_ak=x.stride(1),
-        stride_bk=weight.stride(0),
-        stride_bn=weight.stride(1),
+        stride_bk=weight.T.stride(0),
+        stride_bn=weight.T.stride(1),
         stride_cm=output.stride(0),
         stride_cn=output.stride(1),
         stride_d=bias.stride(0) if bias is not None else 0,
@@ -440,11 +435,12 @@ def optical_compute_quantized_matmul_fn(
     )
 
     output = output.reshape(ori_x_shape[:-1] + (N,))
-    return output
+    q_seed = q_seed + 1 if skip_quantize else q_seed
+    return output, q_seed
 
 
-@torch.library.register_fake(f"{PACKAGE_NAME}::optical_compute_quantized_matmul_fn")
-def _optical_compute_quantized_matmul_fn_fake(
+@optical_compute_quantized_linear_fn.register_fake
+def _optical_compute_quantized_linear_fn_fake(
     x: Tensor,
     weight: Tensor,
     bias: Tensor | None,
@@ -458,13 +454,13 @@ def _optical_compute_quantized_matmul_fn_fake(
     q_levels: int,
     q_seed: int,
     skip_quantize: bool = False,
-) -> Tensor:
-    output = torch.empty((x.shape[0], weight.shape[1]), device=x.device, dtype=x.dtype)
-    return output
+) -> tuple[Tensor, int]:
+    output = torch.empty((x.shape[0], weight.shape[0]), device=x.device, dtype=x.dtype)
+    return output, q_seed
 
 
-@optical_compute_quantized_matmul_fn.register_kernel("cpu")
-def _optical_compute_quantized_matmul_fn_cpu(
+@optical_compute_quantized_linear_fn.register_kernel("cpu")
+def _optical_compute_quantized_linear_fn_cpu(
     x: Tensor,
     weight: Tensor,
     bias: Tensor | None,
@@ -478,20 +474,20 @@ def _optical_compute_quantized_matmul_fn_cpu(
     q_levels: int,
     q_seed: int,
     skip_quantize: bool = False,
-) -> Tensor:
+) -> tuple[Tensor, int]:
     raise NotImplementedError("CPU kernel is not implemented")
 
 
-def _optical_quantized_matmul_backward_fn(ctx, *grad_outputs):
+def _optical_quantized_linear_backward(ctx, *grad_outputs):
     x, weight, bias = ctx.saved_tensors
     grad_x = grad_weight = grad_bias = None
 
     if ctx.needs_input_grad[0]:
-        grad_x = grad_outputs[0].matmul(weight.t())
+        grad_x = grad_outputs[0].mm(weight)
     if ctx.needs_input_grad[1]:
-        grad_weight = x.t().matmul(grad_outputs[0])
-    if ctx.needs_input_grad[2] and bias is not None:
-        grad_bias = grad_outputs[0].sum(dim=0)
+        grad_weight = grad_outputs[0].T.mm(x)
+    if bias is not None and ctx.needs_input_grad[2]:
+        grad_bias = grad_outputs[0].sum(0)
 
     return grad_x, grad_weight, grad_bias, None, None, None, None, None, None, None, None, None, None
 
@@ -500,13 +496,13 @@ def _optical_quantized_matmul_setup_context(ctx, inputs, output):
     ctx.save_for_backward(inputs[0], inputs[1], inputs[2])
 
 
-optical_compute_quantized_matmul_fn.register_autograd(
-    _optical_quantized_matmul_backward_fn,
+optical_compute_quantized_linear_fn.register_autograd(
+    _optical_quantized_linear_backward,
     setup_context=_optical_quantized_matmul_setup_context,
 )
 
 
 __all__ = [
-    "optical_compute_quantized_matmul_fn",
+    "optical_compute_quantized_linear_fn",
     "optical_compute_quantize_fn",
 ]

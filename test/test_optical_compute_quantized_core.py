@@ -1,13 +1,11 @@
-import logging
-
 import torch
 
-from mase_triton.optical_compute.core import optical_compute_quantize_fn, optical_compute_quantized_matmul_fn
-from mase_triton.about import PACKAGE_NAME
+from mase_triton.optical_compute.core import optical_compute_quantize_fn, optical_compute_quantized_linear_fn
+from mase_triton.logging import test_logger, set_logging_verbosity
 
 DEVICE = "cuda"
 
-logger = logging.getLogger(f"{PACKAGE_NAME}.test.{__name__}")
+logger = test_logger.getChild(f"{__name__}")
 
 
 def test_optical_compute_quantized_forward_fn_simple():
@@ -30,8 +28,7 @@ def test_optical_compute_quantized_forward_fn_simple():
     )
     assert (out - x).abs().max().item() < 1 / quant_levels
 
-    logger.info(f"x:\n{x}")
-    logger.info(f"out:\n{out}")
+    logger.info("Test passed: output is close to input")
 
 
 def test_optical_compute_quantized_backward_fn_simple():
@@ -61,11 +58,11 @@ def test_optical_compute_quantized_backward_fn_simple():
 
 def test_optical_compute_quantized_matmul_forward_fn_skip_quantize():
     x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16)
-    w = torch.rand(32, 8, device=DEVICE, dtype=torch.float16)
+    w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16)
     bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
 
-    out_ref = torch.matmul(x, w) + bias if bias is not None else torch.matmul(x, w)
-    out, _ = optical_compute_quantized_matmul_fn(
+    out_ref = torch.matmul(x, w.T) + bias if bias is not None else torch.matmul(x, w.T)
+    out, _ = optical_compute_quantized_linear_fn(
         x,
         w,
         bias,
@@ -86,11 +83,11 @@ def test_optical_compute_quantized_matmul_forward_fn_skip_quantize():
 
 def test_optical_compute_quantized_matmul_forward_fn():
     x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
-    w = torch.rand(32, 8, device=DEVICE, dtype=torch.float16) * 2 - 1
+    w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
     bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
 
-    out_ref = torch.matmul(x, w) + bias if bias is not None else torch.matmul(x, w)
-    out = optical_compute_quantized_matmul_fn(
+    out_ref = torch.matmul(x, w.T) + bias if bias is not None else torch.matmul(x, w.T)
+    out, _ = optical_compute_quantized_linear_fn(
         x,
         w,
         bias,
@@ -107,18 +104,18 @@ def test_optical_compute_quantized_matmul_forward_fn():
     err = (out - out_ref).abs().mean().item()
     logger.info(f"Mean abs error: {err}")
     assert torch.allclose(out, out_ref, atol=0.1, rtol=0.0), f"Output mismatch: {out} vs {out_ref}"
-    logger.info("Test passed")
+    logger.info("Test passed: output is close to reference")
 
 
 def test_optical_compute_quantized_matmul_backward_fn():
     x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
-    w = torch.rand(32, 8, device=DEVICE, dtype=torch.float16) * 2 - 1
+    w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
     bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
     w.requires_grad_()
     x.requires_grad_()
     bias.requires_grad_()
 
-    out = optical_compute_quantized_matmul_fn(
+    out, _ = optical_compute_quantized_linear_fn(
         x,
         w,
         bias,
@@ -134,13 +131,14 @@ def test_optical_compute_quantized_matmul_backward_fn():
     )
     loss = torch.sum(out)
     loss.backward()
-    assert torch.allclose(x.grad, torch.ones((16, 8), device=DEVICE, dtype=torch.float16) @ w.T, atol=1e-2, rtol=0.0)
+    assert torch.allclose(x.grad, torch.ones((16, 8), device=DEVICE, dtype=torch.float16) @ w, atol=1e-2, rtol=0.0)
+    logger.info("Test passed: x.grad is correct")
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    # test_optical_compute_quantized_forward_fn_simple()
-    # test_optical_compute_quantized_backward_fn_simple()
-    # test_optical_compute_quantized_matmul_forward_fn_skip_quantize()
-    # test_optical_compute_quantized_matmul_forward_fn()
+    set_logging_verbosity("info")
+    test_optical_compute_quantized_forward_fn_simple()
+    test_optical_compute_quantized_backward_fn_simple()
+    test_optical_compute_quantized_matmul_forward_fn_skip_quantize()
+    test_optical_compute_quantized_matmul_forward_fn()
     test_optical_compute_quantized_matmul_backward_fn()

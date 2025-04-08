@@ -319,7 +319,7 @@ def random_bitflip_fn(
         return output, seed_exp, seed_frac
 
 
-@torch.library.register_fake(f"{PACKAGE_NAME}::random_bitflip_forward")
+@random_bitflip_fn.register_fake
 def _random_bitflip_forward_fake(
     x: Tensor,
     exp_halves: int | None,
@@ -404,7 +404,7 @@ def _random_bitflip_zero_outed_backward_kernel(
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::random_bitflip_backward",
+    f"{PACKAGE_NAME}::_random_bitflip_backward",
     mutates_args={},
 )
 def _random_bitflip_backward(
@@ -455,7 +455,7 @@ def _random_bitflip_backward(
         return grad_x
 
 
-@torch.library.register_fake(f"{PACKAGE_NAME}::random_bitflip_backward")
+@_random_bitflip_backward.register_fake
 def _random_bitflip_backward_fake(
     x: Tensor,
     grad_y: Tensor,
@@ -514,7 +514,7 @@ def _random_bitflip_forward_cpu(
     raise NotImplementedError("CPU version of random bit flip is not implemented yet.")
 
 
-@random_bitflip_fn.register_kernel("cpu")
+@_random_bitflip_backward.register_kernel("cpu")
 def _random_bitflip_backward_cpu(
     x: Tensor,
     grad_y: Tensor,

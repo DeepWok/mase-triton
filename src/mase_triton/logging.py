@@ -9,7 +9,7 @@ root_logger = logging.getLogger(PACKAGE_NAME)
 
 _handler = colorlog.StreamHandler()
 _formatter = colorlog.ColoredFormatter(
-    "%(log_color)s%(levelname)-8s%(reset)s %(blue)s%(message)s",
+    "%(log_color)s[%(levelname)s][%(pathname)s:%(lineno)s]%(reset)s %(blue)s%(message)s",
     datefmt=None,
     reset=True,
     log_colors={
@@ -25,6 +25,8 @@ _formatter = colorlog.ColoredFormatter(
 if not root_logger.hasHandlers():
     _handler.setFormatter(_formatter)
     root_logger.addHandler(_handler)
+
+test_logger = root_logger.getChild("test")
 
 
 def set_logging_verbosity(level: Union[int, str]):
