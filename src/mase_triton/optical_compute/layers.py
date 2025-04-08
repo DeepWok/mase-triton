@@ -5,7 +5,9 @@ from .core import OpticalTransformerFunctions as OTFunctions
 
 
 @torch.no_grad()
-def _update_stats(x: Tensor, min_max: Tensor, min_max_quantile: Tensor, stat_smooth_factor: float) -> None:
+def _optical_transformer_update_stats(
+    x: Tensor, min_max: Tensor, min_max_quantile: Tensor, stat_smooth_factor: float
+) -> None:
     dtype = x.dtype
     min_max_quantile = min_max_quantile.float()
     if min_max.isinf().any():
@@ -53,17 +55,21 @@ class OpticalTransformerLinear(torch.nn.Linear):
 
         if self.training:
             with torch.no_grad():
-                x_min_max = _update_stats(x, self.x_min_max, self.q_min_max_quantile, self.stat_smooth_factor)
+                x_min_max = _optical_transformer_update_stats(
+                    x, self.x_min_max, self.q_min_max_quantile, self.stat_smooth_factor
+                )
                 self.x_min_max.copy_(x_min_max)
-                w_min_max = _update_stats(self.weight, self.w_min_max, self.q_min_max_quantile, self.stat_smooth_factor)
+                w_min_max = _optical_transformer_update_stats(
+                    self.weight, self.w_min_max, self.q_min_max_quantile, self.stat_smooth_factor
+                )
                 self.w_min_max.copy_(w_min_max)
                 if self.out_min_max.isinf().any():
-                    o_min_max = _update_stats(
+                    o_min_max = _optical_transformer_update_stats(
                         x @ self.weight.T, self.out_min_max, self.q_min_max_quantile, self.stat_smooth_factor
                     )
                     self.out_min_max.copy_(o_min_max)
 
-        out_q, q_seed = OTFunctions.optical_compute_quantized_linear_fn(
+        out_q, q_seed = OTFunctions.quantized_linear_fn(
             x,
             self.weight,
             self.bias,
@@ -82,7 +88,9 @@ class OpticalTransformerLinear(torch.nn.Linear):
         with torch.no_grad():
             self.seed.copy_(q_seed)
             if self.training:
-                out_min_max = _update_stats(out_q, self.out_min_max, self.q_min_max_quantile, self.stat_smooth_factor)
+                out_min_max = _optical_transformer_update_stats(
+                    out_q, self.out_min_max, self.q_min_max_quantile, self.stat_smooth_factor
+                )
                 self.out_min_max.copy_(out_min_max)
 
         return out_q

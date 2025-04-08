@@ -214,7 +214,7 @@ def _get_philox_n_rounds(n_halves: int):
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::random_bitflip_forward",
+    f"{PACKAGE_NAME}::random_bitflip_random_bitflip_forward",
     mutates_args={},
 )
 def random_bitflip_fn(
@@ -506,8 +506,8 @@ def _random_bitflip_backward_cpu(
 
 class RandomBitFlipFunctions:
     kernels = {
-        "random_bitflip_forward_kernel": _random_bitflip_forward_kernel,
-        "random_bitflip_backward_kernel": _random_bitflip_zero_outed_backward_kernel,
+        "random_bitflip::random_bitflip_forward_kernel": _random_bitflip_forward_kernel,
+        "random_bitflip::random_bitflip_backward_kernel": _random_bitflip_zero_outed_backward_kernel,
     }
 
     @staticmethod
