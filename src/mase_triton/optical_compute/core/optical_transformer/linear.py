@@ -277,9 +277,9 @@ def _ot_qlinear_backward(ctx, *grad_outputs):
     grad_x = grad_weight = grad_bias = None
 
     if ctx.needs_input_grad[0]:
-        grad_x = grad_outputs[0].mm(weight)
+        grad_x = grad_outputs[0] @ weight
     if ctx.needs_input_grad[1]:
-        grad_weight = grad_outputs[0].T.mm(x)
+        grad_weight = grad_outputs[0].transpose(-1, -2) @ x
     if bias is not None and ctx.needs_input_grad[2]:
         grad_bias = grad_outputs[0].sum(0)
 

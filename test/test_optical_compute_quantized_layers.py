@@ -27,13 +27,15 @@ def test_optical_compute_quantized_linear_simple():
         device=DEVICE,
         dtype=torch.float32,
     )
-    x = torch.rand(8, in_features, device=DEVICE, dtype=torch.float32)
+    fc1.train()
+    fc2.train()
+    x = torch.rand(2, 8, in_features, device=DEVICE, dtype=torch.float32)
     x = x * 2 - 1
     x.requires_grad_()
     x = fc1(x)
     x = torch.relu(x)
     y = fc2(x)
-    assert y.shape == (8, out_features)
+    assert y.shape == (2, 8, out_features)
     logger.info(f"{fc1}")
     loss = torch.sum(y)
     loss.backward()
@@ -158,6 +160,6 @@ def test_optical_compute_quantized_linear_toy_training():
 
 if __name__ == "__main__":
     set_logging_verbosity("info")
-    # test_optical_compute_quantized_linear_simple()
+    test_optical_compute_quantized_linear_simple()
     # test_optical_compute_quantized_linear_forward_error()
-    test_optical_compute_quantized_linear_toy_training()
+    # test_optical_compute_quantized_linear_toy_training()
