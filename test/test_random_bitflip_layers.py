@@ -14,8 +14,8 @@ DEVICE = "cuda"
 
 def test_random_bitflip_dropout():
     n_passes = 4
-    p_exp = 0.5**4
-    p_frac = 0.5**5
+    p_exp = 0.5 ** 4
+    p_frac = 0.5 ** 5
     zero_out_threshold = 2
     seed_exp, seed_frac = 1, 1
     bitflip = RandomBitFlipDropout(
@@ -47,18 +47,24 @@ def test_random_bitflip_linear_act_only():
     bs = 1024
     in_features = 1024
     out_features = 1024
-    x_p_exp = 0.5**3
-    x_p_frac = 0.5**4
+    x_p_exp = 0.5 ** 3
+    x_p_frac = 0.5 ** 4
     x_zero_out_t = 1e3
     w_p_exp = None
     w_p_frac = None
     w_zero_out_t = None
 
-    logger.info(f"x_p_exp={x_p_exp}, x_p_frac={x_p_frac}, x_zero_out_t={x_zero_out_t}, bypassing w")
+    logger.info(
+        f"x_p_exp={x_p_exp}, x_p_frac={x_p_frac}, x_zero_out_t={x_zero_out_t}, bypassing w"
+    )
 
-    fc = torch.nn.Linear(in_features, out_features, bias=False, device=DEVICE, dtype=dtype)
+    fc = torch.nn.Linear(
+        in_features, out_features, bias=False, device=DEVICE, dtype=dtype
+    )
     with torch.no_grad():
-        fc.weight.copy_(torch.eye(in_features, device=DEVICE, dtype=dtype).transpose(0, 1))
+        fc.weight.copy_(
+            torch.eye(in_features, device=DEVICE, dtype=dtype).transpose(0, 1)
+        )
 
     bitflip_fc = RandomBitFlipLinear.from_linear(
         fc,

@@ -79,7 +79,9 @@ def test_optical_compute_quantized_linear_forward_fn_skip_quantize():
         q_seed=0,
         skip_quantize=True,
     )
-    assert torch.allclose(out, out_ref, atol=1e-2, rtol=0.0), f"Output mismatch: {out} vs {out_ref}"
+    assert torch.allclose(
+        out, out_ref, atol=1e-2, rtol=0.0
+    ), f"Output mismatch: {out} vs {out_ref}"
     logger.info("Test passed: skip_quantize=True")
 
 
@@ -105,7 +107,9 @@ def test_optical_compute_quantized_linear_forward_fn():
     )
     err = (out - out_ref).abs().mean().item()
     logger.info(f"Mean abs error: {err}")
-    assert torch.allclose(out, out_ref, atol=0.1, rtol=0.0), f"Output mismatch: {out} vs {out_ref}"
+    assert torch.allclose(
+        out, out_ref, atol=0.1, rtol=0.0
+    ), f"Output mismatch: {out} vs {out_ref}"
     logger.info("Test passed: output is close to reference")
 
 
@@ -133,7 +137,12 @@ def test_optical_compute_quantized_linear_backward_fn():
     )
     loss = torch.sum(out)
     loss.backward()
-    assert torch.allclose(x.grad, torch.ones((16, 8), device=DEVICE, dtype=torch.float16) @ w, atol=1e-2, rtol=0.0)
+    assert torch.allclose(
+        x.grad,
+        torch.ones((16, 8), device=DEVICE, dtype=torch.float16) @ w,
+        atol=1e-2,
+        rtol=0.0,
+    )
     logger.info("Test passed: x.grad is correct")
 
 
@@ -157,7 +166,9 @@ def test_optical_compute_quantized_bmm_forward_fn_skip_quantize():
     )
     out_ref = torch.matmul(a, b)
 
-    assert torch.allclose(out, out_ref, atol=1e-2, rtol=0.0), f"Output mismatch: {out} vs {out_ref}"
+    assert torch.allclose(
+        out, out_ref, atol=1e-2, rtol=0.0
+    ), f"Output mismatch: {out} vs {out_ref}"
     logger.info("Test passed: skip_quantize=True")
 
 
@@ -223,8 +234,7 @@ def test_optical_compute_quantized_bmm_backward_fn():
 
 
 @pytest.mark.skipif(
-    not all_packages_are_available(("tqdm",)),
-    reason="Requires tqdm and datasets",
+    not all_packages_are_available(("tqdm",)), reason="Requires tqdm and datasets",
 )
 def test_optical_bmm_toy_training():
     from tqdm import tqdm
@@ -238,8 +248,16 @@ def test_optical_bmm_toy_training():
     device = DEVICE
 
     def gen_data(batch_size, seq_len, in_features):
-        a = torch.rand((batch_size * seq_len, in_features), device=DEVICE, dtype=dtype) * 2 - 1
-        b = torch.rand((batch_size * seq_len, in_features), device=DEVICE, dtype=dtype) * 2 - 1
+        a = (
+            torch.rand((batch_size * seq_len, in_features), device=DEVICE, dtype=dtype)
+            * 2
+            - 1
+        )
+        b = (
+            torch.rand((batch_size * seq_len, in_features), device=DEVICE, dtype=dtype)
+            * 2
+            - 1
+        )
         for i in range(10):
             yield a, b
 
@@ -250,7 +268,9 @@ def test_optical_bmm_toy_training():
             self.n_heads = n_heads
             self.seq_len = seq_len
             self.head_dim = head_dim
-            self.fc = torch.nn.Linear(in_features, n_heads * head_dim, bias=False, dtype=dtype)
+            self.fc = torch.nn.Linear(
+                in_features, n_heads * head_dim, bias=False, dtype=dtype
+            )
             self.seed = 0
 
         def forward(self, x1, x2):

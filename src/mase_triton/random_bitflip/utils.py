@@ -42,13 +42,20 @@ def count_matched_bits(a: Tensor, b: Tensor, num_workers: int | None = None):
 
         bit_match_counter["total"] = len(a)
     else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=num_workers
+        ) as executor:
             futures = []
             chunk_size = math.ceil(len(a) / num_workers)
             # submit a chunk of data to each worker
             for i in range(0, len(a), chunk_size):
                 futures.append(
-                    executor.submit(_count_matched_bits_worker, a[i : i + chunk_size], b[i : i + chunk_size], bitwidth)
+                    executor.submit(
+                        _count_matched_bits_worker,
+                        a[i : i + chunk_size],
+                        b[i : i + chunk_size],
+                        bitwidth,
+                    )
                 )
 
             bit_match_counter = {i: 0 for i in range(bitwidth)}
@@ -61,7 +68,10 @@ def count_matched_bits(a: Tensor, b: Tensor, num_workers: int | None = None):
 
 
 def calculate_bit_mismatch_rate(
-    a: Tensor, b: Tensor, group: dict[str, tuple[int]] | None = None, num_workers: int | None = None
+    a: Tensor,
+    b: Tensor,
+    group: dict[str, tuple[int]] | None = None,
+    num_workers: int | None = None,
 ):
     default_group_map = {
         torch.float32: {"sign_exp": tuple(range(0, 9)), "frac": tuple(range(9, 32))},

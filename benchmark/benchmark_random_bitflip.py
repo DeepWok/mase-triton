@@ -26,18 +26,26 @@ def get_random_bitflip_fn_forward_benchmark_configs():
                         styles=[("blue", "-"), ("orange", "-")],
                         ylabel="Bandwidth (GB/s)",
                         plot_name=f"random_bitflip_fn (forward, {dtype}, n_halves: {n_halves}, enable_zero_out: {zero_out})",
-                        args={"dtype": dtype, "n_halves": n_halves, "zero_out": zero_out},
+                        args={
+                            "dtype": dtype,
+                            "n_halves": n_halves,
+                            "zero_out": zero_out,
+                        },
                     )
                 )
     return configs
 
 
 @triton.testing.perf_report(get_random_bitflip_fn_forward_benchmark_configs())
-def benchmark_random_bitflip_fn_forward(n_elements: int, dtype: str, n_halves: int, zero_out: bool, provider: str):
+def benchmark_random_bitflip_fn_forward(
+    n_elements: int, dtype: str, n_halves: int, zero_out: bool, provider: str
+):
     x = torch.randn(n_elements, device="cuda", dtype=getattr(torch, dtype))
     quantiles = [0.5, 0.2, 0.8]
     if provider == "Tensor.clone()":
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: x.clone(), quantiles=quantiles)
+        ms, min_ms, max_ms = triton.testing.do_bench(
+            lambda: x.clone(), quantiles=quantiles
+        )
     else:
         ms, min_ms, max_ms = triton.testing.do_bench(
             lambda: random_bitflip_fn(
@@ -50,9 +58,11 @@ def benchmark_random_bitflip_fn_forward(n_elements: int, dtype: str, n_halves: i
             ),
             quantiles=quantiles,
         )
-    gb_per_sec = lambda ms: (2 * n_elements * x.element_size()) / 2**30 / (ms / 1000)
+    gb_per_sec = lambda ms: (2 * n_elements * x.element_size()) / 2 ** 30 / (ms / 1000)
     return gb_per_sec(ms), gb_per_sec(min_ms), gb_per_sec(max_ms)
 
 
 # %%
-df = benchmark_random_bitflip_fn_forward.run(show_plots=True, print_data=True, return_df=True)
+df = benchmark_random_bitflip_fn_forward.run(
+    show_plots=True, print_data=True, return_df=True
+)

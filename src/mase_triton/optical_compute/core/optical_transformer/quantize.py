@@ -84,8 +84,7 @@ def _ot_quantize_forward_kernel(
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::optical_transformer_quantize_fn",
-    mutates_args={},
+    f"{PACKAGE_NAME}::optical_transformer_quantize_fn", mutates_args={},
 )
 def ot_quantize_fn(
     x: Tensor,
@@ -96,7 +95,11 @@ def ot_quantize_fn(
     lut_min: float | None,
     quant_mode: str,
 ) -> tuple[Tensor, int]:
-    assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {x.dtype}"
+    assert x.dtype in (
+        torch.bfloat16,
+        torch.float16,
+        torch.float32,
+    ), f"Unsupported dtype {x.dtype}"
     assert x.is_cuda, "Input tensor must be on CUDA device"
     assert quant_mode in ["det", "rand"], f"Unsupported quant_mode {quant_mode}"
     assert lut_min is None or lut_min >= 0.0, "lut_min must be non-negative"
@@ -164,6 +167,5 @@ def _ot_quantize_forward_fn_cpu(
 
 
 ot_quantize_fn.register_autograd(
-    _ot_quantize_backward,
-    setup_context=_ot_quantize_setup_context,
+    _ot_quantize_backward, setup_context=_ot_quantize_setup_context,
 )

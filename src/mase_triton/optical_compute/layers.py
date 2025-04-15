@@ -14,7 +14,9 @@ def _optical_transformer_update_stats(
         min_max = x.flatten().float().quantile(min_max_quantile).to(dtype)
     else:
         w_min_max_new = x.flatten().float().quantile(min_max_quantile).to(dtype)
-        min_max = stat_smooth_factor * min_max + (1 - stat_smooth_factor) * w_min_max_new
+        min_max = (
+            stat_smooth_factor * min_max + (1 - stat_smooth_factor) * w_min_max_new
+        )
     return min_max
 
 
@@ -36,11 +38,25 @@ class OpticalTransformerLinear(torch.nn.Linear):
         super().__init__(in_features, out_features, bias, device, dtype)
         self.quant_levels = q_levels
         self.q_lut_min = q_lut_min
-        self.register_buffer("q_min_max_quantile", torch.tensor(q_quantiles, device=device, dtype=torch.float))
-        self.register_buffer("x_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype))
-        self.register_buffer("w_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype))
-        self.register_buffer("out_min_max", torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype))
-        self.register_buffer("seed", torch.tensor(q_init_seed, device=device, dtype=torch.int64))
+        self.register_buffer(
+            "q_min_max_quantile",
+            torch.tensor(q_quantiles, device=device, dtype=torch.float),
+        )
+        self.register_buffer(
+            "x_min_max",
+            torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype),
+        )
+        self.register_buffer(
+            "w_min_max",
+            torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype),
+        )
+        self.register_buffer(
+            "out_min_max",
+            torch.tensor([float("inf"), float("-inf")], device=device, dtype=dtype),
+        )
+        self.register_buffer(
+            "seed", torch.tensor(q_init_seed, device=device, dtype=torch.int64)
+        )
         self.q_min_max_quantile: Tensor
         self.x_min_max: Tensor
         self.w_min_max: Tensor
@@ -60,12 +76,18 @@ class OpticalTransformerLinear(torch.nn.Linear):
                 )
                 self.x_min_max.copy_(x_min_max)
                 w_min_max = _optical_transformer_update_stats(
-                    self.weight, self.w_min_max, self.q_min_max_quantile, self.stat_smooth_factor
+                    self.weight,
+                    self.w_min_max,
+                    self.q_min_max_quantile,
+                    self.stat_smooth_factor,
                 )
                 self.w_min_max.copy_(w_min_max)
                 if self.out_min_max.isinf().any():
                     o_min_max = _optical_transformer_update_stats(
-                        x @ self.weight.T, self.out_min_max, self.q_min_max_quantile, self.stat_smooth_factor
+                        x @ self.weight.T,
+                        self.out_min_max,
+                        self.q_min_max_quantile,
+                        self.stat_smooth_factor,
                     )
                     self.out_min_max.copy_(o_min_max)
 
@@ -89,7 +111,10 @@ class OpticalTransformerLinear(torch.nn.Linear):
             self.seed.copy_(q_seed)
             if self.training:
                 out_min_max = _optical_transformer_update_stats(
-                    out_q, self.out_min_max, self.q_min_max_quantile, self.stat_smooth_factor
+                    out_q,
+                    self.out_min_max,
+                    self.q_min_max_quantile,
+                    self.stat_smooth_factor,
                 )
                 self.out_min_max.copy_(out_min_max)
 

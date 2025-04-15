@@ -2,7 +2,9 @@ import numpy as np
 import torch
 
 
-def get_binary_repr(x: torch.Tensor, split_every: int = 4, splitter: str = " ") -> np.ndarray:
+def get_binary_repr(
+    x: torch.Tensor, split_every: int = 4, splitter: str = " "
+) -> np.ndarray:
     assert isinstance(x, torch.Tensor), "Only support torch.Tensor"
     if x.dtype in [torch.bool]:
         int_type = torch.bool
@@ -40,7 +42,12 @@ def get_binary_repr(x: torch.Tensor, split_every: int = 4, splitter: str = " ") 
             return format(i, f"0{num_bits}b")
         else:
             bin_str = format(i, f"0{num_bits}b")
-            bin_str = splitter.join([bin_str[i : i + split_every] for i in range(0, len(bin_str), split_every)])
+            bin_str = splitter.join(
+                [
+                    bin_str[i : i + split_every]
+                    for i in range(0, len(bin_str), split_every)
+                ]
+            )
             return bin_str
 
     bin_repr = np.array(list(map(formatted_bin, x_int.flatten()))).reshape(x_int.shape)
@@ -55,9 +62,7 @@ def get_binary_repr_bf16(x: torch.Tensor) -> str:
     def formatted_bin(i):
         bin_str = format(i, "016b")
         bin_str = "{sign} {exponent} {mantissa}".format(
-            sign=bin_str[0],
-            exponent=bin_str[1:9],
-            mantissa=bin_str[9:],
+            sign=bin_str[0], exponent=bin_str[1:9], mantissa=bin_str[9:],
         )
         return bin_str
 

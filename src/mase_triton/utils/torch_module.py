@@ -17,7 +17,9 @@ def get_layer_by_name(module: torch.nn.Module, layer_name: str) -> torch.nn.Modu
     raise ValueError(f"Cannot find op {layer_name} in module {module}")
 
 
-def set_layer_by_name(module: torch.nn.Module, name: str, new_layer: torch.nn.Module) -> None:
+def set_layer_by_name(
+    module: torch.nn.Module, name: str, new_layer: torch.nn.Module
+) -> None:
     levels = name.split(".")
     if len(levels) > 1:
         mod_ = module

@@ -1,7 +1,11 @@
 import torch
 from torch import Tensor
 
-from .core import find_nearest_prob_n_halves, random_bitflip_fn, calculate_flip_probability
+from .core import (
+    find_nearest_prob_n_halves,
+    random_bitflip_fn,
+    calculate_flip_probability,
+)
 
 
 def _format_prob(prob: float | None) -> str:
@@ -110,7 +114,9 @@ class RandomBitFlipLinear(torch.nn.Linear):
         self.w_zero_out_t = w_zero_out_t
 
     def forward(self, x: Tensor) -> Tensor:
-        if not (self.x_p_exp is None and self.x_p_frac is None and self.x_zero_out_t is None):
+        if not (
+            self.x_p_exp is None and self.x_p_frac is None and self.x_zero_out_t is None
+        ):
             x, x_seed_exp, x_seed_frac = random_bitflip_fn(
                 x,
                 exp_halves=self.x_nearest_exp_halves,

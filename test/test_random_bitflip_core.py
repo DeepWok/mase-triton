@@ -39,7 +39,7 @@ def test_random_bitflip_forward_simple():
 def test_random_bitflip_forward_fully_activated_slow():
     helper_random_bitflip_forward_fully_activated(
         input_dtypes=[torch.float16, torch.bfloat16, torch.float32],
-        s_exp_halves_frac_halves=[(0.5**n, 0.5**n) for n in range(1, 25)],
+        s_exp_halves_frac_halves=[(0.5 ** n, 0.5 ** n) for n in range(1, 25)],
         M=2048,
         max_tries=1000,
         num_workers=min(16, os.cpu_count() // 2),
@@ -49,7 +49,7 @@ def test_random_bitflip_forward_fully_activated_slow():
 def test_random_bitflip_forward_fully_activated():
     helper_random_bitflip_forward_fully_activated(
         input_dtypes=[torch.float16],
-        s_exp_halves_frac_halves=[(0.5**n, 0.5**n) for n in range(1, 8)],
+        s_exp_halves_frac_halves=[(0.5 ** n, 0.5 ** n) for n in range(1, 8)],
         M=2048,
         max_tries=1000,
         num_workers=min(16, os.cpu_count() // 2),
@@ -111,7 +111,9 @@ def helper_random_bitflip_forward_fully_activated(
                 assert out.shape == x.shape
                 find_bitflip = not torch.equal(x, out)
                 if find_bitflip:
-                    mismatch_rate = calculate_bit_mismatch_rate(x, out, num_workers=num_workers)
+                    mismatch_rate = calculate_bit_mismatch_rate(
+                        x, out, num_workers=num_workers
+                    )
                     rows.append(
                         [
                             input_dtype,
