@@ -12,7 +12,7 @@ def uniform_quantize(x: tl.tensor, k, gradient_clip=False):
         out = tl.where(x >= 0, 1.0, -1.0)
     else:
         n = float(2 ** k - 1)
-        out = tl.round(x * n) / n
+        out = tl.extra.cuda.libdevice.rint(x * n) / n
 
     return out
 
@@ -26,7 +26,7 @@ def uniform_quantize_new(x: tl.tensor, k, scale, zero_point, gradient_clip=False
         n = float(2 ** k - 1)
         out = tl.div(x, scale)
         out = out + zero_point
-        out = tl.round(out)
+        out = tl.extra.cuda.libdevice.rint(out)
         out = tl.clamp(out, 0.0, n)
         out = out - zero_point
         out = out * scale

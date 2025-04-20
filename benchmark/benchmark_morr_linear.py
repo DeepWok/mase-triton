@@ -1,6 +1,9 @@
 #%%
-import random
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["TRITON_INTERPRET"] = "1"
 
+import random
 import torch
 import triton
 
@@ -12,15 +15,16 @@ from src.mase_triton.optical_compute.core.optical_morr import (
     AllPassMORRCirculantLinear,
 )
 
-DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if DEVICE.type == "cpu":
+    raise RuntimeError("This benchmark requires a GPU")
 
 def get_morr_linear_benchmark_configs():
     configs = []
     # Varying input sizes to benchmark
-    batch_sizes = [16, 32, 64, 128, 256]
-    in_features = [512]
-    out_features = [512]
+    batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256]
+    in_features = [2048]
+    out_features = [2048]
 
     x_vals = []
     for B in batch_sizes:
@@ -33,9 +37,9 @@ def get_morr_linear_benchmark_configs():
             x_names=["B", "N", "D_in", "D_out"],
             x_vals=x_vals,
             line_arg="provider",
-            line_vals=["triton"],
-            line_names=["Triton MORR Linear"],
-            styles=[("orange", "-")],
+            line_vals=["pytorch", "triton"],
+            line_names=["Pytorch MORR Linear", "Triton MORR Linear"],
+            styles=[("blue", "-"), ("orange", "-")],
             ylabel="time (ms)",
             plot_name=f"morr_linear_performance",
             args={},
@@ -46,19 +50,24 @@ def get_morr_linear_benchmark_configs():
 
 @triton.testing.perf_report(get_morr_linear_benchmark_configs())
 def benchmark_morr_linear(B, N, D_in, D_out, provider, miniblock=4):
-    torch_dtype = torch.float
+    torch_dtype = torch.float32
 
     x = torch.randn(B, N, D_in, device=DEVICE, dtype=torch_dtype)
 
     # Create the PyTorch module
     module = AllPassMORRCirculantLinear(
-        in_features=D_in, out_features=D_out, bias=False, config={miniblock: miniblock,}
+        in_features=D_in, 
+        out_features=D_out, 
+        bias=False, 
+        config={
+            miniblock: miniblock,
+        }
     ).to(DEVICE)
     grid_dim_y = module.grid_dim_y
     grid_dim_x = module.grid_dim_x
     morr_output_scale = module.morr_output_scale
 
-    weight = torch.ones(
+    weight = torch.randn(
         grid_dim_y, grid_dim_x, miniblock, device=DEVICE, dtype=torch_dtype,
     )
     module.weight.data = weight
@@ -83,7 +92,7 @@ def benchmark_morr_linear(B, N, D_in, D_out, provider, miniblock=4):
                 crosstalk_factor=None if not module.enable_thermal_crosstalk else module.crosstalk_factor,
                 enable_phase_noise=module.enable_phase_noise,
                 phase_noise_std=None if not module.enable_phase_noise else module.phase_noise_std,
-                trainable_morr_bias=module.trainable_morr_bias,
+                trainable_morr_bias=None,
                 mrr_a=module.mrr_a,
                 mrr_r=module.mrr_r,
                 finegrain_drop_mask=None,
@@ -113,3 +122,4 @@ if __name__ == "__main__":
         show_plots=True, 
         print_data=True,
     )
+# %%

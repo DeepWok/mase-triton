@@ -59,7 +59,7 @@ class AllPassMORRCirculantLinear(ONNBaseLayer):
         self.grid_dim_y = int(np.ceil(self.out_features / miniblock_size))
         self.in_features_pad = self.grid_dim_x * miniblock_size
         self.out_features_pad = self.grid_dim_y * miniblock_size
-
+        
         self.v_max = 10.8
         self.v_pi = 4.36
         self.gamma = np.pi / self.v_pi ** 2
