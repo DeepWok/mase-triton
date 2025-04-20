@@ -301,7 +301,7 @@ def test_optical_bmm_toy_training():
 if __name__ == "__main__":
     set_logging_verbosity("info")
     # test_optical_compute_quantized_forward_fn_simple()
-    # test_optical_compute_quantized_backward_fn_simple()
+    test_optical_compute_quantized_backward_fn_simple()
     # test_optical_compute_quantized_linear_forward_fn_skip_quantize()
     # test_optical_compute_quantized_linear_forward_fn()
     test_optical_compute_quantized_linear_backward_fn()
