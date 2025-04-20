@@ -9,6 +9,7 @@ import triton.language as tl
 
 from ....dtype import TORCH_DTYPE_TO_TRITON
 from ....about import PACKAGE_NAME
+from ....config import AutotuneConfig
 
 
 def _get_autotune_configs_ot_quantize_forward_kernel():
@@ -21,11 +22,11 @@ def _get_autotune_configs_ot_quantize_forward_kernel():
     return configs
 
 
-@triton.autotune(
-    configs=_get_autotune_configs_ot_quantize_forward_kernel(),
-    key=["n_elements"],
-    use_cuda_graph=False,
-)
+# @triton.autotune(
+#     configs=_get_autotune_configs_ot_quantize_forward_kernel(),
+#     key=["n_elements"],
+#     use_cuda_graph=False,
+# )
 @triton.jit
 def _ot_quantize_forward_kernel(
     x_ptr,
@@ -83,6 +84,13 @@ def _ot_quantize_forward_kernel(
     tl.store(output_ptr + offsets, x, mask=load_mask)
 
 
+if AutotuneConfig.onn_ot:
+    _ot_quantize_forward_kernel = triton.autotune(
+        configs=_get_autotune_configs_ot_quantize_forward_kernel(),
+        key=["n_elements"],
+    )
+
+
 @torch.library.custom_op(
     f"{PACKAGE_NAME}::optical_transformer_quantize_fn",
     mutates_args={},
@@ -108,19 +116,22 @@ def ot_quantize_fn(
     n_elements = x.numel()
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-    _ot_quantize_forward_kernel[grid](
-        x,
-        output,
-        n_elements=n_elements,
-        quant_levels=quant_levels,
-        min_val=min_val,
-        max_val=max_val,
-        lut_min=lut_min,
-        seed=seed,
-        QUANT_MODE=quant_mode,
-        ENABLE_LUT_MIN=enable_lut_min,
-        INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
-    )
+
+    kwargs = {
+        "n_elements": n_elements,
+        "quant_levels": quant_levels,
+        "min_val": min_val,
+        "max_val": max_val,
+        "lut_min": lut_min,
+        "seed": seed,
+        "QUANT_MODE": quant_mode,
+        "ENABLE_LUT_MIN": enable_lut_min,
+        "INPUT_DTYPE": TORCH_DTYPE_TO_TRITON[x.dtype],
+    }
+    if not AutotuneConfig.onn_ot:
+        kwargs["BLOCK_SIZE"] = 1024
+
+    _ot_quantize_forward_kernel[grid](x, output, **kwargs)
 
     if quant_mode == "rand":
         seed += 1

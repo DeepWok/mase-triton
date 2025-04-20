@@ -39,6 +39,7 @@ def test_optical_compute_quantized_linear_simple():
     logger.info(f"{fc1}")
     loss = torch.sum(y)
     loss.backward()
+    assert torch.all(torch.isfinite(fc1.weight.grad))
 
 
 def test_optical_compute_quantized_linear_forward_error():
@@ -160,6 +161,6 @@ def test_optical_compute_quantized_linear_toy_training():
 
 if __name__ == "__main__":
     set_logging_verbosity("info")
-    test_optical_compute_quantized_linear_simple()
+    # test_optical_compute_quantized_linear_simple()
     # test_optical_compute_quantized_linear_forward_error()
-    # test_optical_compute_quantized_linear_toy_training()
+    test_optical_compute_quantized_linear_toy_training()

@@ -5,7 +5,7 @@ import triton.language as tl
 
 from ....dtype import TORCH_DTYPE_TO_TRITON
 from ....about import PACKAGE_NAME
-
+from ....config import AutotuneConfig
 from .utils import _noisy_quantize
 
 
@@ -38,10 +38,10 @@ def _get_autotune_configs_ot_qmatmul_kernel():
     ]
 
 
-@triton.autotune(
-    configs=_get_autotune_configs_ot_qmatmul_kernel(),
-    key=["B", "M", "N", "K"],
-)
+# @triton.autotune(
+#     configs=_get_autotune_configs_ot_qmatmul_kernel(),
+#     key=["B", "M", "N", "K"],
+# )
 @triton.jit
 def _ot_qmatmul_forward_kernel(
     a_ptr,
@@ -149,6 +149,13 @@ def _ot_qmatmul_forward_kernel(
     tl.store(c_ptrs, c, mask=c_mask)
 
 
+if AutotuneConfig.onn_ot:
+    _ot_qmatmul_forward_kernel = triton.autotune(
+        configs=_get_autotune_configs_ot_qmatmul_kernel(),
+        key=["B", "M", "N", "K"],
+    )
+
+
 @torch.library.custom_op(
     f"{PACKAGE_NAME}::optical_transformer_quantized_matmul_fn",
     mutates_args={},
@@ -188,36 +195,40 @@ def ot_qmatmul_fn(
 
     grid = lambda meta: (triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]), B)
 
-    _ot_qmatmul_forward_kernel[grid](
-        a,
-        b,
-        output,
-        B=B,
-        M=M,
-        N=N,
-        K=K,
-        a_min=a_min,
-        a_max=a_max,
-        b_min=b_min,
-        b_max=b_max,
-        b_lut_min=b_lut_min,
-        c_min=o_min,
-        c_max=o_max,
-        quant_levels=q_levels,
-        seed=q_seed,
-        stride_ab=a.stride(0),
-        stride_am=a.stride(1),
-        stride_ak=a.stride(2),
-        stride_bb=b.stride(0),
-        stride_bk=b.stride(1),
-        stride_bn=b.stride(2),
-        stride_cb=output.stride(0),
-        stride_cm=output.stride(1),
-        stride_cn=output.stride(2),
-        INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[a.dtype],
-        ENABLE_LUT_MIN=b_lut_min is not None,
-        SKIP_QUANTIZE=skip_quantize,
-    )
+    kwargs = {
+        "B": B,
+        "M": M,
+        "N": N,
+        "K": K,
+        "a_min": a_min,
+        "a_max": a_max,
+        "b_min": b_min,
+        "b_max": b_max,
+        "b_lut_min": b_lut_min,
+        "c_min": o_min,
+        "c_max": o_max,
+        "quant_levels": q_levels,
+        "seed": q_seed,
+        "stride_ab": a.stride(0),
+        "stride_am": a.stride(1),
+        "stride_ak": a.stride(2),
+        "stride_bb": b.stride(0),
+        "stride_bk": b.stride(1),
+        "stride_bn": b.stride(2),
+        "stride_cb": output.stride(0),
+        "stride_cm": output.stride(1),
+        "stride_cn": output.stride(2),
+        "INPUT_DTYPE": TORCH_DTYPE_TO_TRITON[a.dtype],
+        "ENABLE_LUT_MIN": b_lut_min is not None,
+        "SKIP_QUANTIZE": skip_quantize,
+    }
+    if not AutotuneConfig.onn_ot:
+        kwargs["BLOCK_SIZE_M"] = 128
+        kwargs["BLOCK_SIZE_N"] = 256
+        kwargs["BLOCK_SIZE_K"] = 32
+        kwargs["GROUP_SIZE_M"] = 8
+
+    _ot_qmatmul_forward_kernel[grid](a, b, output, **kwargs)
     output = output.reshape(orig_a_shape[:-2] + (M, N))
     q_seed += 1 if not skip_quantize else q_seed
     return output, q_seed
