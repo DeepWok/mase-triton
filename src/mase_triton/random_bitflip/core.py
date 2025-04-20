@@ -9,19 +9,6 @@ from ..about import PACKAGE_NAME
 
 
 def calculate_flip_probability(prob_halves: int | None) -> float | None:
-    """Calculate the flip probability from the number of halves, prob = 0.5^prob_halves.
-    Note that current flip kernel uses bitwise-or only (refer to _cta_random_flip).
-
-    Parameters
-    ----------
-    prob_halves : int
-        the number of halves = 0.5^prob_halves, should be a positive integer.
-
-    Returns
-    -------
-    float
-        the flip probability
-    """
     if prob_halves is None:
         return None
     else:
@@ -30,17 +17,6 @@ def calculate_flip_probability(prob_halves: int | None) -> float | None:
 
 
 def find_nearest_prob_n_halves(prob: float | None) -> int | None:
-    """
-    Calculate the smallest integer n such that (1/2)^n is less than or equal to the given probability.
-
-    This function computes the smallest number of halvings (n) required for the probability to be less than or equal to the given probability.
-
-    Args:
-        prob (float): The probability value for which to find the nearest number of halvings.
-
-    Returns:
-        int: The smallest integer n such that (1/2)^n <= prob.
-    """
     if prob is None:
         return None
     else:
@@ -238,7 +214,7 @@ def _get_philox_n_rounds(n_halves: int):
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::random_bitflip_forward",
+    f"{PACKAGE_NAME}::random_bitflip_random_bitflip_forward",
     mutates_args={},
 )
 def random_bitflip_fn(
@@ -319,7 +295,7 @@ def random_bitflip_fn(
         return output, seed_exp, seed_frac
 
 
-@torch.library.register_fake(f"{PACKAGE_NAME}::random_bitflip_forward")
+@random_bitflip_fn.register_fake
 def _random_bitflip_forward_fake(
     x: Tensor,
     exp_halves: int | None,
@@ -329,6 +305,8 @@ def _random_bitflip_forward_fake(
     zero_out_threshold: float | None,
 ) -> tuple[Tensor, int, int]:
     output = torch.empty_like(x, dtype=x.dtype)
+    seed_exp = seed_exp + 1
+    seed_frac = seed_frac + 1
     return output, seed_exp, seed_frac
 
 
@@ -402,7 +380,7 @@ def _random_bitflip_zero_outed_backward_kernel(
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::random_bitflip_backward",
+    f"{PACKAGE_NAME}::_random_bitflip_backward",
     mutates_args={},
 )
 def _random_bitflip_backward(
@@ -453,7 +431,7 @@ def _random_bitflip_backward(
         return grad_x
 
 
-@torch.library.register_fake(f"{PACKAGE_NAME}::random_bitflip_backward")
+@_random_bitflip_backward.register_fake
 def _random_bitflip_backward_fake(
     x: Tensor,
     grad_y: Tensor,
@@ -499,18 +477,81 @@ def _random_bitflip_setup_context(ctx, inputs, output):
 random_bitflip_fn.register_autograd(_random_bitflip_backward_wrapper, setup_context=_random_bitflip_setup_context)
 
 
-def _random_bitflip_forward_cpu():
+@random_bitflip_fn.register_kernel("cpu")
+def _random_bitflip_forward_cpu(
+    x: Tensor,
+    exp_halves: int | None,
+    frac_halves: int | None,
+    seed_exp: int,
+    seed_frac: int,
+    zero_out_threshold: float | None,
+) -> tuple[Tensor, int, int]:
     # TODO: implement the CPU version of random bit flip using numpy
-    ...
+    raise NotImplementedError("CPU version of random bit flip is not implemented yet.")
 
 
-def _random_bitflip_backward_cpu():
+@_random_bitflip_backward.register_kernel("cpu")
+def _random_bitflip_backward_cpu(
+    x: Tensor,
+    grad_y: Tensor,
+    exp_halves: int | None,
+    frac_halves: int | None,
+    seed_exp: int,
+    seed_frac: int,
+    zero_out_threshold: float | None,
+) -> Tensor:
     # TODO: implement the CPU version of random bit flip backward using numpy
-    ...
+    raise NotImplementedError("CPU version of random bit flip backward is not implemented yet.")
 
 
-__all__ = [
-    "random_bitflip_fn",
-    "find_nearest_prob_n_halves",
-    "calculate_flip_probability",
-]
+class RandomBitFlipFunctions:
+    kernels = {
+        "random_bitflip::random_bitflip_forward_kernel": _random_bitflip_forward_kernel,
+        "random_bitflip::random_bitflip_backward_kernel": _random_bitflip_zero_outed_backward_kernel,
+    }
+
+    @staticmethod
+    def random_bitflip_fn(
+        x: Tensor,
+        exp_halves: int | None,
+        frac_halves: int | None,
+        seed_exp: int,
+        seed_frac: int,
+        zero_out_threshold: float | None,
+    ) -> tuple[Tensor, int, int]:
+        return random_bitflip_fn(
+            x=x,
+            exp_halves=exp_halves,
+            frac_halves=frac_halves,
+            seed_exp=seed_exp,
+            seed_frac=seed_frac,
+            zero_out_threshold=zero_out_threshold,
+        )
+
+    @staticmethod
+    def calculate_flip_probability(prob_halves: int | None) -> float | None:
+        """Calculate the flip probability from the number of halves, prob = 0.5^prob_halves.
+        Note that current flip kernel uses bitwise-or only (refer to _cta_random_flip).
+
+        Args:
+            prob_halves (int | None): The number of halves to calculate the flip probability.
+
+        Returns:
+            float | None: The calculated flip probability, or None if prob_halves is None.
+        """
+        return calculate_flip_probability(prob_halves=prob_halves)
+
+    @staticmethod
+    def find_nearest_prob_n_halves(prob: float | None) -> int | None:
+        """
+        Calculate the smallest integer n such that (1/2)^n is less than or equal to the given probability.
+
+        This function computes the smallest number of halvings (n) required for the probability to be less than or equal to the given probability.
+
+        Args:
+            prob (float): The probability value for which to find the nearest number of halvings.
+
+        Returns:
+            int: The smallest integer n such that (1/2)^n <= prob.
+        """
+        return find_nearest_prob_n_halves(prob=prob)
