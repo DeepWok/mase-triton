@@ -12,20 +12,20 @@ from ....dtype import TORCH_DTYPE_TO_TRITON
 from .quantize import _input_quantize_fn, _weight_quantize_fn
 
 
-def _get_autotune_configs_morr_forward_kernel():
-    return [
-        triton.Config(
-            {
-                "BLOCK_SIZE_M": 1,
-                "BLOCK_SIZE_P": 1,
-                "BLOCK_SIZE_Q": 1,
-                "BLOCK_SIZE_K1": 4,
-                "BLOCK_SIZE_K2": 1,
-            },
-            num_stages=3,
-            num_warps=8,
-        ),
-    ]
+# def _get_autotune_configs_morr_forward_kernel():
+#     return [
+#         triton.Config(
+#             {
+#                 "BLOCK_SIZE_M": 1,
+#                 "BLOCK_SIZE_P": 1,
+#                 "BLOCK_SIZE_Q": 1,
+#                 "BLOCK_SIZE_K1": 4,
+#                 "BLOCK_SIZE_K2": 1,
+#             },
+#             num_stages=3,
+#             num_warps=8,
+#         ),
+#     ]
 
 
 @triton.jit
@@ -85,9 +85,9 @@ def _mrr_roundtrip_phase_to_tr_func(
     configs=[
         triton.Config(
             {
-                "BLOCK_SIZE_M": 1,
-                "BLOCK_SIZE_P": 1,
-                "BLOCK_SIZE_Q": 1,
+                "BLOCK_SIZE_M": 8,
+                "BLOCK_SIZE_P": 8,
+                "BLOCK_SIZE_Q": 8,
                 "BLOCK_SIZE_K1": 4,
                 "BLOCK_SIZE_K2": 1,
             },
@@ -144,25 +144,27 @@ def morr_propagate_kernel(
 ):
 
     # Program ID for block-based processing
-    pid_m = tl.program_id(axis=0)
-    pid_p = tl.program_id(axis=1)
-    pid_q = tl.program_id(axis=2)
-    # each program is assigned a [1, 1, miniblock, 1] block
-    num_pid_q = grid_dim_q
-    num_pid_p = grid_dim_p
-    # 2d coordinates in p, q dimension
-    # pid_p = pid // num_pid_q
-    # pid_q = pid % num_pid_q
+    # each program is assigned GROUP_SIZE_MPQ * [1, 1, miniblock, 1] block
+    pid = tl.program_id(axis=0)
+    pid_m = pid // (grid_dim_q * grid_dim_p)
+    pid_p = (pid // grid_dim_q) % grid_dim_p
+    pid_q = pid % grid_dim_q
+
+    # starting element's m, p, q coordinates in the global tensor
+    start_m = pid_m * BLOCK_SIZE_M
+    start_p = pid_p * BLOCK_SIZE_P
+    start_q = pid_q * BLOCK_SIZE_Q
     
-    offs_wm = tl.arange(0, BLOCK_SIZE_M)
-    offs_wp = pid_p * BLOCK_SIZE_P + tl.arange(0, BLOCK_SIZE_P)
-    offs_wq = pid_q * BLOCK_SIZE_Q + tl.arange(0, BLOCK_SIZE_Q)
+    # w [1, p, q, k, 1]
+    offs_wm = tl.arange(0, 1)
+    offs_wp = pid_p * BLOCK_SIZE_P + tl.arange(0, 1)
+    offs_wq = pid_q * BLOCK_SIZE_Q + tl.arange(0, 1)
     offs_wk1 = tl.arange(0, BLOCK_SIZE_K1)
     offs_wk2 = tl.arange(0, BLOCK_SIZE_K2)
 
-    offs_xm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    offs_xp = tl.arange(0, BLOCK_SIZE_P)
-    offs_xq = pid_q * BLOCK_SIZE_Q + tl.arange(0, BLOCK_SIZE_Q)
+    offs_xm = pid_m * BLOCK_SIZE_M + tl.arange(0, 1)
+    offs_xp = tl.arange(0, 1)
+    offs_xq = pid_q * BLOCK_SIZE_Q + tl.arange(0, 1)
     offs_xk1 = tl.arange(0, BLOCK_SIZE_K1)
     offs_xk2 = tl.arange(0, BLOCK_SIZE_K2)
 
@@ -184,57 +186,95 @@ def morr_propagate_kernel(
         + offs_xk1[None, None, None, :, None] * stride_xk1
         + offs_xk2[None, None, None, None, :] * stride_xk2
     )
-    w = tl.load(w_ptrs)
-    x = tl.load(x_ptrs)
-    
-    # TODO: Test Quantization Function
-    # if in_bit < 16:
-    #     x = _input_quantize_fn(x)
 
-    ## build_weight()
-    # TODO: add morr_output_scale, fix quantization func
-    # if w_bit < 16:
-    #     w = _weight_quantize_fn(w)
-    # else:
-    #     w = tl.abs(w)
+    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_P, BLOCK_SIZE_Q, BLOCK_SIZE_K1, BLOCK_SIZE_K2), dtype=tl.float32)
+    m_indices = tl.arange(0, BLOCK_SIZE_M)[:, None, None, None, None]
+    p_indices = tl.arange(0, BLOCK_SIZE_P)[None, :, None, None, None]
+    q_indices = tl.arange(0, BLOCK_SIZE_Q)[None, None, :, None, None]
 
-    w = tl.abs(w).reshape(BLOCK_SIZE_K1, BLOCK_SIZE_K2) # [1, 1, 1, k, 1] -> [k, 1]
-    x = x.reshape(BLOCK_SIZE_K1, BLOCK_SIZE_K2) # [1, 1, 1, k, 1] -> [k, 1]
-    
-    if finegrain_drop_mask is not None:
-        w *= tl.cast(finegrain_drop_mask, tl.float32)
+    for m_local in range(BLOCK_SIZE_M):
+        m = start_m + m_local
+        for p_local in range(BLOCK_SIZE_P):
+            p = start_p + p_local
+            for q_local in range(BLOCK_SIZE_Q):
+                q = start_q + q_local
+                
+                w = tl.load(w_ptrs)
+                x = tl.load(x_ptrs)
+                
+                # TODO: Test Quantization Function
+                # if in_bit < 16:
+                #     x = _input_quantize_fn(x)
 
-    x = x * x  # input_modulator()
+                ## build_weight()
+                # TODO: add morr_output_scale, fix quantization func
+                # if w_bit < 16:
+                #     w = _weight_quantize_fn(w)
+                # else:
+                #     w = tl.abs(w)
 
-    ### propagate_morr()
-    # apply thermal crosstalk noise
-    if ENABLE_THERMAL_CROSSTALK:
-        w = w * crosstalk_factor
-    # create toeplitz matrix
+                w = tl.abs(w).reshape(BLOCK_SIZE_K1, BLOCK_SIZE_K2) # [1, 1, 1, k, 1] -> [k, 1]
+                x = x.reshape(BLOCK_SIZE_K1, BLOCK_SIZE_K2) # [1, 1, 1, k, 1] -> [k, 1]
+                
+                if finegrain_drop_mask is not None:
+                    w *= tl.cast(finegrain_drop_mask, tl.float32)
 
-    w = _toeplitz(w, BLOCK_SIZE_K1)  # [k, k]
-    
-    # apply phase noise
-    if ENABLE_PHASE_NOISE:
-        noise = tl.zeros_like(x) + tl.randn(x.shape) * phase_noise_std
-        x = x + noise
-    # add trainable bias
-    if trainable_morr_bias:
-        x = x - morr_bias
-    # mrr_roundtrip_phase_to_tr
-    x = _mrr_roundtrip_phase_to_tr_func(x, mrr_a, mrr_r, intensity=True)
+                x = x * x  # input_modulator()
 
-    # TODO: this is temporary, as tl.dot requires 16*16 matrix at least
-    acc = tl.zeros((BLOCK_SIZE_K1, BLOCK_SIZE_K2), dtype=tl.float32)
-    x_transposed = tl.trans(x)
-    x_broadcasted = tl.broadcast_to(x_transposed, (BLOCK_SIZE_K1, BLOCK_SIZE_K1))
-    elementwise_prod = w * x_broadcasted
-    acc_sum = tl.sum(elementwise_prod, axis=1)
-    acc = tl.reshape(acc_sum, (BLOCK_SIZE_K1, BLOCK_SIZE_K2))
-    # acc = tl.dot(w, x, acc)
+                ### propagate_morr()
+                # apply thermal crosstalk noise
+                if ENABLE_THERMAL_CROSSTALK:
+                    w = w * crosstalk_factor
+                # create toeplitz matrix
+
+                w = _toeplitz(w, BLOCK_SIZE_K1)  # [k, k]
+                
+                # apply phase noise
+                if ENABLE_PHASE_NOISE:
+                    noise = tl.zeros_like(x) + tl.randn(x.shape) * phase_noise_std
+                    x = x + noise
+                # add trainable bias
+                if trainable_morr_bias:
+                    x = x - morr_bias
+                # mrr_roundtrip_phase_to_tr
+                x = _mrr_roundtrip_phase_to_tr_func(x, mrr_a, mrr_r, intensity=True)
+
+                # TODO: this is temporary, as tl.dot requires 16*16 matrix at least
+                x_transposed = tl.trans(x)
+                x_broadcasted = tl.broadcast_to(x_transposed, (BLOCK_SIZE_K1, BLOCK_SIZE_K1))
+                elementwise_prod = w * x_broadcasted
+                acc_sum = tl.sum(elementwise_prod, axis=1)
+                res = tl.reshape(acc_sum, (BLOCK_SIZE_K1, BLOCK_SIZE_K2))
+                # acc = tl.dot(w, x, acc)
+
+                # store the value in acc using mask
+                condition_mask = (m_indices == m) & (p_indices == p) & (q_indices == q)
+                res = res[None, None, None, :, :]
+                acc = tl.where(condition_mask, res, acc)
+
+                # propagate pointer along Q dimension
+                w_ptrs += stride_wq
+                x_ptrs += stride_xq
+            
+            # Q loop end
+            # reset pointer along Q dimension
+            w_ptrs -= stride_wq * (BLOCK_SIZE_Q + 1)
+            x_ptrs -= stride_xq * (BLOCK_SIZE_Q + 1)
+            # propagate pointer along P dimension
+            w_ptrs += stride_wp
+            x_ptrs += stride_xp
+        
+        # P loop end
+        # reset pointer along P dimension
+        w_ptrs -= stride_wp * (BLOCK_SIZE_P + 1)
+        x_ptrs -= stride_xp * (BLOCK_SIZE_P + 1)
+        # propagate pointer along M dimension
+        w_ptrs += stride_wp
+        x_ptrs += stride_xp
+
 
     out = acc.to(INPUT_DTYPE)
-    out = out.reshape(BLOCK_SIZE_M, BLOCK_SIZE_P, BLOCK_SIZE_Q, BLOCK_SIZE_K1) # [k, 1] -> [1, 1, 1, k]
+    out = out.reshape(BLOCK_SIZE_M, BLOCK_SIZE_P, BLOCK_SIZE_Q, BLOCK_SIZE_K1) # [1, 1, q, k, 1] -> [1, 1, q, k]
 
     offs_om = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_op = pid_p * BLOCK_SIZE_P + tl.arange(0, BLOCK_SIZE_P)
@@ -323,9 +363,7 @@ def morr_linear_fn(
 
     # Launch the Triton kernel
     grid = lambda meta: (
-        M,
-        P,
-        Q,
+        triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(P, meta["BLOCK_SIZE_P"]) * triton.cdiv(Q, meta["BLOCK_SIZE_Q"]),
     )
     morr_propagate_kernel[grid](
         x_ptr = x,
