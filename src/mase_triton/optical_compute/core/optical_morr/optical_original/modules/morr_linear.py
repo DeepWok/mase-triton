@@ -374,7 +374,7 @@ class AllPassMORRCirculantLinear(ONNBaseLayer):
         # crosstalk on the weights are much cheaper to compute than on the phase shift
         if self.enable_thermal_crosstalk and self.crosstalk_factor > 1:
             weight = weight * self.crosstalk_factor
-        weight = toeplitz(weight).unsqueeze(0)  # [1,  p, q, k, k]
+        weight = toeplitz(weight).unsqueeze(0)  # [1, p, q, k, k]
         x = x.unsqueeze(1).unsqueeze(-1)  # [bs, 1, q, k, 1]
         x = weight.matmul(x).squeeze(-1)  # [bs, p, q, k]
 

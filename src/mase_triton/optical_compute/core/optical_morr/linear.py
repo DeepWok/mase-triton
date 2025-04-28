@@ -8,7 +8,8 @@ import triton.language as tl
 import pdb
 
 from ....dtype import TORCH_DTYPE_TO_TRITON
-
+from ....about import PACKAGE_NAME
+from .optical_original.utils import toeplitz
 from .quantize import _input_quantize_fn, _weight_quantize_fn
 
 
@@ -28,35 +29,26 @@ from .quantize import _input_quantize_fn, _weight_quantize_fn
 #     ]
 
 
-@triton.jit
-def _toeplitz(
-    x: tl.tensor,                 # Input block, shape (BLOCK_SIZE_K1,)
-    BLOCK_SIZE_K1: tl.constexpr,
-):
-    """
-    Creates a Toeplitz matrix block from an input vector block x.
-    Assumes x is available for gathering.
+# @triton.jit
+# def _toeplitz(
+#     x: tl.tensor,                 # Input block, shape (BLOCK_SIZE_K1,)
+#     BLOCK_SIZE_K1: tl.constexpr,
+# ):
+#     """
+#     Creates a Toeplitz matrix block from an input vector block x.
+#     """
 
-    Args:
-        x: tl.tensor of shape (BLOCK_SIZE_K1,)
-        BLOCK_SIZE_K1: The dimension size.
+#     row_indices = tl.arange(0, BLOCK_SIZE_K1)[:, None]
+#     col_indices = tl.arange(0, BLOCK_SIZE_K1)[None, :]
+#     target_indices_in_x = (col_indices - row_indices + BLOCK_SIZE_K1) % BLOCK_SIZE_K1
 
-    Returns:
-        tl.tensor: A block of shape (BLOCK_SIZE_K1, BLOCK_SIZE_K1)
-                   representing the Toeplitz matrix.
-    """
+#     result = tl.zeros((BLOCK_SIZE_K1, BLOCK_SIZE_K1), dtype=x.dtype)
+#     for k in range(BLOCK_SIZE_K1):
+#          mask = (target_indices_in_x == k)
+#          val_k_block = tl.sum(x * (tl.arange(0, BLOCK_SIZE_K1) == k)) # Reduces x to scalar, broadcasts back
+#          result = tl.where(mask, val_k_block, result)
 
-    row_indices = tl.arange(0, BLOCK_SIZE_K1)[:, None]
-    col_indices = tl.arange(0, BLOCK_SIZE_K1)[None, :]
-    target_indices_in_x = (col_indices - row_indices + BLOCK_SIZE_K1) % BLOCK_SIZE_K1
-
-    result = tl.zeros((BLOCK_SIZE_K1, BLOCK_SIZE_K1), dtype=x.dtype)
-    for k in range(BLOCK_SIZE_K1):
-         mask = (target_indices_in_x == k)
-         val_k_block = tl.sum(x * (tl.arange(0, BLOCK_SIZE_K1) == k)) # Reduces x to scalar, broadcasts back
-         result = tl.where(mask, val_k_block, result)
-
-    return result 
+#     return result 
 
 @triton.jit
 def _mrr_roundtrip_phase_to_tr_func(
@@ -85,9 +77,9 @@ def _mrr_roundtrip_phase_to_tr_func(
     configs=[
         triton.Config(
             {
-                "BLOCK_SIZE_M": 8,
-                "BLOCK_SIZE_P": 8,
-                "BLOCK_SIZE_Q": 8,
+                "BLOCK_SIZE_M": 1,
+                "BLOCK_SIZE_P": 1,
+                "BLOCK_SIZE_Q": 1,
                 "BLOCK_SIZE_K1": 4,
                 "BLOCK_SIZE_K2": 1,
             },
@@ -160,7 +152,7 @@ def morr_propagate_kernel(
     offs_wp = pid_p * BLOCK_SIZE_P + tl.arange(0, 1)
     offs_wq = pid_q * BLOCK_SIZE_Q + tl.arange(0, 1)
     offs_wk1 = tl.arange(0, BLOCK_SIZE_K1)
-    offs_wk2 = tl.arange(0, BLOCK_SIZE_K2)
+    offs_wk2 = tl.arange(0, BLOCK_SIZE_K1)
 
     offs_xm = pid_m * BLOCK_SIZE_M + tl.arange(0, 1)
     offs_xp = tl.arange(0, 1)
@@ -201,54 +193,55 @@ def morr_propagate_kernel(
                 
                 w = tl.load(w_ptrs)
                 x = tl.load(x_ptrs)
-                
+
                 # TODO: Test Quantization Function
                 # if in_bit < 16:
                 #     x = _input_quantize_fn(x)
 
-                ## build_weight()
+                # ----- build_weight() -----
                 # TODO: add morr_output_scale, fix quantization func
                 # if w_bit < 16:
                 #     w = _weight_quantize_fn(w)
                 # else:
                 #     w = tl.abs(w)
 
-                w = tl.abs(w).reshape(BLOCK_SIZE_K1, BLOCK_SIZE_K2) # [1, 1, 1, k, 1] -> [k, 1]
+                w = tl.abs(w).reshape(BLOCK_SIZE_K1, BLOCK_SIZE_K1) # [1, 1, 1, k, k] -> [k, k]
                 x = x.reshape(BLOCK_SIZE_K1, BLOCK_SIZE_K2) # [1, 1, 1, k, 1] -> [k, 1]
                 
                 if finegrain_drop_mask is not None:
                     w *= tl.cast(finegrain_drop_mask, tl.float32)
-
+                
                 x = x * x  # input_modulator()
+                # ----- propagate_morr() -----
 
-                ### propagate_morr()
                 # apply thermal crosstalk noise
                 if ENABLE_THERMAL_CROSSTALK:
                     w = w * crosstalk_factor
-                # create toeplitz matrix
-
-                w = _toeplitz(w, BLOCK_SIZE_K1)  # [k, k]
                 
+                # MatMals
+                # TODO: this is temporary, as tl.dot requires 16*16 matrix at least
+                x = tl.trans(x)
+                x = tl.broadcast_to(x, (BLOCK_SIZE_K1, BLOCK_SIZE_K1))
+                x = w * x
+                x = tl.sum(x, axis=1)
+                x = tl.reshape(x, (BLOCK_SIZE_K1, BLOCK_SIZE_K2))
+                # acc = tl.dot(w, x, acc)
+
                 # apply phase noise
                 if ENABLE_PHASE_NOISE:
                     noise = tl.zeros_like(x) + tl.randn(x.shape) * phase_noise_std
                     x = x + noise
+
                 # add trainable bias
                 if trainable_morr_bias:
                     x = x - morr_bias
+                
                 # mrr_roundtrip_phase_to_tr
                 x = _mrr_roundtrip_phase_to_tr_func(x, mrr_a, mrr_r, intensity=True)
 
-                # TODO: this is temporary, as tl.dot requires 16*16 matrix at least
-                x_transposed = tl.trans(x)
-                x_broadcasted = tl.broadcast_to(x_transposed, (BLOCK_SIZE_K1, BLOCK_SIZE_K1))
-                elementwise_prod = w * x_broadcasted
-                acc_sum = tl.sum(elementwise_prod, axis=1)
-                res = tl.reshape(acc_sum, (BLOCK_SIZE_K1, BLOCK_SIZE_K2))
-                # acc = tl.dot(w, x, acc)
-
                 # store the value in acc using mask
-                condition_mask = (m_indices == m) & (p_indices == p) & (q_indices == q)
+                res = x
+                condition_mask = (m_indices == m_local) & (p_indices == p_local) & (q_indices == q_local)
                 res = res[None, None, None, :, :]
                 acc = tl.where(condition_mask, res, acc)
 
@@ -290,7 +283,9 @@ def morr_propagate_kernel(
     o_mask = None
     tl.store(o_ptrs, out, mask=o_mask)
 
-
+@torch.library.custom_op(
+    f"{PACKAGE_NAME}::optical_morr_linear_linear_fn", mutates_args={},
+)
 def morr_linear_fn(
     x: Tensor,
     weight: Tensor,
@@ -299,9 +294,9 @@ def morr_linear_fn(
     grid_dim_y: int,
     miniblock: int,
     enable_thermal_crosstalk: bool,
-    crosstalk_factor: float,
+    crosstalk_factor: float | None,
     enable_phase_noise: bool,
-    phase_noise_std: float,
+    phase_noise_std: float | None,
     trainable_morr_bias: bool,
     mrr_a: float,
     mrr_r: float,
@@ -313,7 +308,7 @@ def morr_linear_fn(
     out_features_pad: int,
     in_bit: int,
     w_bit: int,
-) -> Tensor:
+) -> tuple[Tensor, Tensor, Tensor]:
 
     assert x.dtype in (
         torch.bfloat16,
@@ -332,9 +327,9 @@ def morr_linear_fn(
     is_transformer = len(ori_x_shape) == 3
 
     if is_transformer:
-        B, N_seq, D = x.shape
-        M = B * N_seq
-        x = x.reshape(M, D)
+        in_B, in_N, in_D = x.shape
+        M = in_B * in_N
+        x = x.reshape(M, in_D)
     else:
         M = x.shape[0]
 
@@ -356,8 +351,11 @@ def morr_linear_fn(
     # Reshape x and weight
     x = x.view(-1, grid_dim_x, miniblock)  # [M, q, k]
     x = x.unsqueeze(1).unsqueeze(-1) # [M, 1, q, k, 1]
-    weight = weight.unsqueeze(0).unsqueeze(-1) # [p, q, k] -> [1, p, q, k, 1]
+    weight = toeplitz(weight).unsqueeze(0) # [p, q, k] -> [1, p, q, k, k]
 
+    x_ctx = x.clone()
+    w_ctx = weight.clone()
+    
     # Allocate output
     output = torch.empty((M, P, Q, K, 1), device=x.device, dtype=x.dtype)
 
@@ -404,12 +402,13 @@ def morr_linear_fn(
         INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
     )
 
-    # morr_output_scale in build_weight()
+    # ----- build_weight() morr_output_scale part ----- 
     if w_bit < 16:
         morr_output_scale = _weight_quantize_fn(morr_output_scale)
     else:
-        morr_output_scale = morr_output_scale - morr_output_scale.data.mean()
-    ## differential balancing factor concatenation
+        morr_output_scale = (morr_output_scale - morr_output_scale.data.mean())
+    
+    # differential balancing factor concatenation
     scale = morr_output_scale[..., :-1, :]
     scale_pad = morr_output_scale[..., -1:, :]
     if grid_dim_x % 2 == 0:
@@ -434,6 +433,227 @@ def morr_linear_fn(
 
     # Reshape back for transformer
     if is_transformer:
-        output = output.view(B, N_seq, out_features)
+        output = output.view(in_B, in_N, out_features)
 
-    return output
+    # aux_tensor = (
+    #     torch.abs(w_ctx),  # w_morr: weight in propagate_morr matmul
+    #     x_ctx,                  # x_modulator: x before x^2
+    # )
+
+    return output, torch.abs(w_ctx), x_ctx
+
+
+
+def _morr_linear_setup_context(ctx, inputs, output):
+    """
+    Save for backward only what the backward routine really needs.
+    """
+    (
+        x,                       # 0  Tensor – input
+        weight,                  # 1  Tensor – learnable weight
+        bias,                    # 2  Tensor | None – bias
+        grid_dim_x,              # 3  int
+        grid_dim_y,              # 4  int
+        miniblock,               # 5  int (== K)
+        enable_thermal_crosstalk,# 6  bool
+        crosstalk_factor,        # 7  float
+        enable_phase_noise,      # 8  bool
+        phase_noise_std,         # 9  float
+        trainable_morr_bias,     # 10 bool
+        mrr_a,                   # 11 float
+        mrr_r,                   # 12 float
+        finegrain_drop_mask,     # 13 Tensor | None
+        morr_output_scale,       # 14 Tensor
+        in_features,             # 15 int
+        in_features_pad,         # 16 int
+        out_features,            # 17 int
+        out_features_pad,        # 18 int
+        in_bit,                  # 19 int
+        w_bit,                   # 20 int
+    ) = inputs
+
+    output, w_morr, x_modulator = output
+    # (
+    #     w_morr, 
+    #     x_modulator,
+    # ) = aux_tensor
+
+    device, dtype = x.device, x.dtype
+
+    # ----- Tensor meta-data that backward needs -----
+    # Shapes
+    M = x.shape[0] if x.dim() == 2 else x.shape[0] * x.shape[1]
+    P, Q, K = weight.shape
+    tensor_shape = (M, P, Q, K)
+
+    # mrr_para: para for mrr_roundtrip_phase_to_tr()
+    c1 = -2.0 * mrr_a * mrr_r
+    c2 = mrr_a * mrr_a + mrr_r * mrr_r
+    c3 = 1.0 + (mrr_r * mrr_r) * (mrr_a * mrr_a) - mrr_a * mrr_a - mrr_r * mrr_r
+    c4 = (mrr_a**2.0 - 1.0) * (mrr_r**2.0 - 1.0) * 2.0 * mrr_a * mrr_r                                       
+    intensity = True
+    mrr_para = (c1, c2, c3, c4, intensity)
+    
+    # x_morr: x input of matmal in propagate_morr()
+    x_morr = x_modulator ** 2 # [m, 1, q, k, q]
+
+    # x_mrr: x input of mrr_roundtrip_phase_to_tr()
+    x_mrr = w_morr.matmul(x_morr) 
+    if enable_phase_noise and phase_noise_std > 1e-5:
+        x_mrr = x_mrr + torch.zeros_like(x_mrr).normal_(0, phase_noise_std)
+    if trainable_morr_bias:
+        x_mrr = x_mrr - morr_bias
+
+    # TODO: complete morr_bias
+    morr_bias = torch.zeros(1, device=device, dtype=dtype)
+
+
+    # 3. stash tensors 
+    ctx.save_for_backward(
+        x,                        # original input
+        weight,                   # original weight
+        bias if bias is not None else torch.tensor([], device=device, dtype=dtype),
+        morr_output_scale,        # original morr_output_scale
+        morr_bias,                # 5
+        x_morr,                   # 7
+        x_mrr,                    # 8
+        w_morr,                   # 10
+        x_modulator,              # 11
+    )
+    ctx.tensor_shape = tensor_shape
+    ctx.mrr_para = mrr_para
+    ctx.trainable_morr_bias = trainable_morr_bias
+    ctx.in_features = in_features 
+    ctx.in_features_pad = in_features_pad                     
+    ctx.out_features = out_features     
+    ctx.out_features_pad = out_features_pad
+
+
+
+def _morr_linear_backward(ctx, grad_output):
+    """
+    Backward pass for morr_linear_fn.
+    """
+    (
+        x, weight, bias,
+        morr_output_scale,
+        morr_bias,
+        x_morr,
+        x_mrr,
+        w_morr,
+        x_modulator,
+    ) = ctx.saved_tensors
+
+    M, P, Q, K  = ctx.tensor_shape
+    c1, c2, c3, c4, intensity = ctx.mrr_para
+    in_features = ctx.in_features
+    in_features_pad = ctx.in_features_pad
+    out_features = ctx.out_features
+    out_features_pad = ctx.out_features_pad
+    x_input_shape = x.shape
+
+    # ----- backward prop -----
+    # Reshape
+    grad_output = grad_output.view(x.shape[0], weight.shape[1], weight.shape[2], -1)  # [M, P, Q, K]
+
+    # ----- Gradient w.r.t input x -----
+    if ctx.needs_input_grad[0]:
+        # 0. gradient from output
+        grad_out = torch.zeros_like(x)
+        
+        # 1. reshape
+        grad_out = grad_out.view(M, -1) # [m, out_features]
+
+        if ctx.needs_input_grad[4] and bias:
+            grad_bias = grad_out.sum(dim=0) # [out_features]
+
+        out_pad = torch.zeros(grad_out.size[0], out_features_pad-out_features) # [m, out_features_pad - out_features]
+        grad_out = torch.cat([grad_out, out_pad], dim=1) # [m * out_features_pad] = [m, p*k]
+
+        # 2. x=x.flatten(1)
+        # input: [m, p**k]
+        grad = grad_out.view(M, P, 1, K) # [m, p, 1, k]
+
+        # 3. x = morr_output_scale.matmul(x)  # [1, 1, 1, q] x [bs, p, q, k] = [bs, p, 1, k]
+        # dL/d(morr_output_scale)
+        if ctx.needs_input_grad[3]:
+            grad_s = grad.matmul(x_morr.transpose(-2, -1)) # [bs,p,1,q]
+            grad_s = grad_s.sum(dim=(0, 1)) # [1, 1, 1, q] broadcast-compatible 
+        else:
+            grad_s = None
+
+        # dL/dx
+        grad_x = morr_output_scale.transpose(-2, -1).matmul(grad_out) # [bs, p, q, k]
+
+        # 4. x = mrr_roundtrip_phase_to_tr(x)
+        denominator = input.cos().mul_(c1).add_(c2 + c3)
+        if intensity:
+            denominator.square_()
+            numerator = input.sin().mul_(c4)
+        else:
+            numerator = input.sin().mul_(c4 / 2)
+            denominator = (
+                denominator.sub(1).pow_(1.5).mul_(denominator.sub(c3).sqrt_())
+            )
+        grad_x = numerator.div_(denominator).mul_(grad_x) # [bs, p, q, k]
+        
+        # 5. x += phase_noise and morr_bias
+        # these are assumed to have identity gradient
+
+        # 6. x = weight.matmul(x) [1, p, q, k, k] * [bs, 1, q, k, 1] = [bs, p, q, k, 1]
+        grad_x = grad_x.unsqueeze(-1) # [bs, p, q, k, 1]
+        # dL/dx
+        grad_x = torch.matmul(w_morr.transpose(-1, -2), grad_x) # [1, p, q, k, k] x [bs, p, q, k, 1] = [bs, p, q, k, 1]
+        grad_x = grad_x.sum(dim=1, keepdim=True) # [bs, p, q, k, 1] -> [bs, 1, q, k, 1]
+        grad_x = grad_x.squeeze(-1).squeeze(1) # [bs, 1, q, k, 1] -> [bs, q, k]
+
+        # 7. input modulator
+        grad_x = grad_x * 2 * x_modulator # [bs, q, k]
+
+        # 8. input reshape
+        grad_x = grad_x.view(x_input_shape)
+        grad_x = grad_x[:, :in_features]
+
+
+
+    # ----- Gradient w.r.t weight -----
+    if ctx.needs_input_grad[1]:
+        
+        # 0. gradient after x = weight.matmul(x)
+        dY5 = torch.zeros_like(...).unsqueeze(-1) # [bs, p, q, k, 1]
+
+        # 1. x = weight.matmul(x)
+        dX5 = (weight.transpose(-1,-2) @ dY5) # [bs,p,q,k,1]
+        dX5 = dX5.sum(dim=1, keepdim=True) # [bs,1,q,k,1]
+        dX = dX5.squeeze(1,-1) # [bs,q,k]
+        
+        dW5_batch = dY5 @ x.transpose(-1,-2) # [bs,p,q,k,k]
+        dW5 = dW5_batch.sum(dim=0, keepdim=True) # [1,p,q,k,k]
+
+        # 2. weight = toeplitz(weight)
+        k = dW5.size(-1)
+        row = torch.arange(k, device=dW5.device)[:, None]        # (k,1)
+        col = torch.arange(k, device=dW5.device)[None, :]        # (1,k)
+        idx = (col - row) & (k - 1)  if k & (k-1) == 0 else (col - row + k) % k
+        
+        grad_w = dW5.new_zeros(dW5.shape[:-1])
+        grad_w.scatter_add_(-1, idx.expand_as(dW5), dW5).squeeze(0) # [p, q, k]
+
+        # 3. build_weight() weight = self.weight.abs()
+        grad_w = grad_w * weight.sign()
+
+
+
+    return (
+        grad_x,               # ∂L/∂x
+        grad_w,          # ∂L/∂w
+        grad_bias,        # ∂L/∂bias
+        None, None, None, None, None, None, None, None, None, None, None,
+        grad_s,  # ∂L/∂output_scale
+        None, None, None, None, None, None
+    )
+
+
+morr_linear_fn.register_autograd(
+    _morr_linear_backward, setup_context=_morr_linear_setup_context,
+)

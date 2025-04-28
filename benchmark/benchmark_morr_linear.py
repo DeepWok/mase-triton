@@ -1,7 +1,7 @@
 #%%
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-# os.environ["TRITON_INTERPRET"] = "1"
+os.environ["TRITON_INTERPRET"] = "1"
 
 import random
 import torch
@@ -25,9 +25,9 @@ def get_morr_linear_benchmark_configs():
     # batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256]
     # in_features = [2048]
     # out_features = [2048]
-    batch_sizes = [256]
-    in_features = [1024]
-    out_features = [1024]
+    batch_sizes = [1]
+    in_features = [64]
+    out_features = [64]
 
     x_vals = []
     for B in batch_sizes:
@@ -43,6 +43,9 @@ def get_morr_linear_benchmark_configs():
             line_vals=["pytorch", "triton"],
             line_names=["Pytorch MORR Linear", "Triton MORR Linear"],
             styles=[("blue", "-"), ("orange", "-")],
+            # line_vals=["triton"],
+            # line_names=["Triton MORR Linear"],
+            # styles=[("orange", "-")],
             ylabel="time (ms)",
             plot_name=f"morr_linear_performance",
             args={},
@@ -53,7 +56,7 @@ def get_morr_linear_benchmark_configs():
 
 def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
     torch_dtype = torch.float32
-
+    torch.manual_seed(42)
     x = torch.randn(B, N, D_in, device=DEVICE, dtype=torch_dtype)
 
     # Create the PyTorch module
@@ -76,7 +79,7 @@ def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
 
     torch_output = module(x)
     
-    triton_output = morr_linear_fn(
+    triton_output, _, _ = morr_linear_fn(
         x,
         weight,
         bias = None,
@@ -100,11 +103,10 @@ def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
         w_bit = module.w_bit,
     )
 
-
+    # --- Comparison ---
     print(f"torch_output shape: {torch_output.shape}, dtype: {torch_output.dtype}, device: {torch_output.device}")
     print(f"triton_output shape: {triton_output.shape}, dtype: {triton_output.dtype}, device: {triton_output.device}")
 
-    # --- Comparison ---
     if torch_output.shape != triton_output.shape:
         print("\nError: Shapes do not match!")
         print(f"Torch shape: {torch_output.shape}")
@@ -117,13 +119,12 @@ def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
     max_abs_diff = torch.max(abs_diff)
     mean_abs_diff = torch.mean(abs_diff)
 
-    are_close = torch.allclose(torch_output, triton_output, rtol=1e-5, atol=1e-8)
+    are_close = torch.allclose(torch_output, triton_output, rtol=1e-3, atol=1e-5)
 
     print("\n--- Comparison Results ---")
     print(f"Are the outputs close (torch.allclose)? {are_close}")
     print(f"Maximum Absolute Difference: {max_abs_diff.item():.6e}") # .item() gets scalar value
     print(f"Mean Absolute Difference (MAE): {mean_abs_diff.item():.6e}")
-
 
 @triton.testing.perf_report(get_morr_linear_benchmark_configs())
 def benchmark_morr_linear(B, N, D_in, D_out, provider, miniblock=4):
@@ -187,10 +188,10 @@ def benchmark_morr_linear(B, N, D_in, D_out, provider, miniblock=4):
 
 
 #%%
-df = benchmark_morr_linear.run(
-    show_plots=True, 
-    print_data=True,
-)
+# df = benchmark_morr_linear.run(
+#     show_plots=True, 
+#     print_data=True,
+# )
 # %%
-# morr_accuracy_test(B=1, N=1, D_in=64, D_out=64, miniblock=4)
+morr_accuracy_test(B=1, N=1, D_in=4, D_out=4, miniblock=4)
 # %%

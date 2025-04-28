@@ -50,7 +50,6 @@ def _get_toeplitz_indices(n: int, device: Device) -> Tensor:
     indices = circulant(torch.arange(n, device=device))
     return indices
 
-
 def toeplitz(col: Tensor) -> Tensor:
     """
     Efficient Toeplitz matrix generation from the first column. The column vector must in the last dimension. Batch generation is supported. Suitable for AutoGrad. Circulant matrix multiplication is ~4x faster than rfft-based implementation!\\
