@@ -419,8 +419,8 @@ class AllPassMORRCirculantLinear(ONNBaseLayer):
         # print("output scale Q:", end=", ")
         # print_stat(scale[..., :scale.size(-1)//2])
         """
-        x = morr_output_scale.matmul(x)  # [1, 1, 1, q] x [bs, p, q, k] = [bs, p, 1, k]
-        x = x.flatten(1)  # [bs, p*k]
+        x = morr_output_scale.matmul(x) # [1, 1, 1, q] x [bs, p, q, k] = [bs, p, 1, k]
+        x = x.flatten(1) # [bs, p*k]
         return x
 
     def get_finegrain_drop_mask(self, topk: int) -> Tensor:

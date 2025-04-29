@@ -308,7 +308,7 @@ def morr_linear_fn(
     out_features_pad: int,
     in_bit: int,
     w_bit: int,
-) -> tuple[Tensor, Tensor, Tensor]:
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
 
     assert x.dtype in (
         torch.bfloat16,
@@ -353,7 +353,7 @@ def morr_linear_fn(
     x = x.unsqueeze(1).unsqueeze(-1) # [M, 1, q, k, 1]
     weight = toeplitz(weight).unsqueeze(0) # [p, q, k] -> [1, p, q, k, k]
 
-    x_ctx = x.clone()
+    x_ctx = x.squeeze(-1).squeeze(1).clone() # [M, q, k]
     w_ctx = weight.clone()
     
     # Allocate output
@@ -421,6 +421,7 @@ def morr_linear_fn(
         else:
             scale = scale_pad  # [1, 1, q, 1]
     morr_output_scale = scale.squeeze(-1).unsqueeze(0)  # [1 ,1, 1, q]
+    ctx_morr_output_scale = morr_output_scale.clone()
 
     # Apply output scale
     output = output.squeeze(-1)  # [m, p, q, k, 1] -> [m, p, q, k]
@@ -440,7 +441,7 @@ def morr_linear_fn(
     #     x_ctx,                  # x_modulator: x before x^2
     # )
 
-    return output, torch.abs(w_ctx), x_ctx
+    return output, torch.abs(w_ctx), x_ctx, ctx_morr_output_scale
 
 
 
@@ -463,7 +464,7 @@ def _morr_linear_setup_context(ctx, inputs, output):
         mrr_a,                   # 11 float
         mrr_r,                   # 12 float
         finegrain_drop_mask,     # 13 Tensor | None
-        morr_output_scale,       # 14 Tensor
+        _,                       # 14 morr_output_scale
         in_features,             # 15 int
         in_features_pad,         # 16 int
         out_features,            # 17 int
@@ -472,7 +473,7 @@ def _morr_linear_setup_context(ctx, inputs, output):
         w_bit,                   # 20 int
     ) = inputs
 
-    output, w_morr, x_modulator = output
+    output, w_morr, x_modulator, morr_output_scale = output
     # (
     #     w_morr, 
     #     x_modulator,
@@ -495,10 +496,11 @@ def _morr_linear_setup_context(ctx, inputs, output):
     mrr_para = (c1, c2, c3, c4, intensity)
     
     # x_morr: x input of matmal in propagate_morr()
-    x_morr = x_modulator ** 2 # [m, 1, q, k, q]
+    x_morr = x_modulator ** 2 # [m, q, k]
+    x_morr = x_morr.unsqueeze(1).unsqueeze(-1) # [m, 1, q, k, 1]
 
     # x_mrr: x input of mrr_roundtrip_phase_to_tr()
-    x_mrr = w_morr.matmul(x_morr) 
+    x_mrr = w_morr.matmul(x_morr).squeeze(-1)
     if enable_phase_noise and phase_noise_std > 1e-5:
         x_mrr = x_mrr + torch.zeros_like(x_mrr).normal_(0, phase_noise_std)
     if trainable_morr_bias:
@@ -530,7 +532,7 @@ def _morr_linear_setup_context(ctx, inputs, output):
 
 
 
-def _morr_linear_backward(ctx, grad_output):
+def _morr_linear_backward(ctx, grad_output, *ignored):
     """
     Backward pass for morr_linear_fn.
     """
@@ -551,47 +553,47 @@ def _morr_linear_backward(ctx, grad_output):
     out_features = ctx.out_features
     out_features_pad = ctx.out_features_pad
     x_input_shape = x.shape
-
+    DEVICE = x.device
     # ----- backward prop -----
     # Reshape
-    grad_output = grad_output.view(x.shape[0], weight.shape[1], weight.shape[2], -1)  # [M, P, Q, K]
+    grad_out = grad_output.view(x.shape[0], weight.shape[1], weight.shape[2], -1)  # [M, P, Q, K]
 
     # ----- Gradient w.r.t input x -----
     if ctx.needs_input_grad[0]:
         # 0. gradient from output
-        grad_out = torch.zeros_like(x)
         
         # 1. reshape
         grad_out = grad_out.view(M, -1) # [m, out_features]
 
         if ctx.needs_input_grad[4] and bias:
             grad_bias = grad_out.sum(dim=0) # [out_features]
+        else:
+            grad_bias = None
 
-        out_pad = torch.zeros(grad_out.size[0], out_features_pad-out_features) # [m, out_features_pad - out_features]
+        out_pad = torch.zeros(grad_out.shape[0], out_features_pad-out_features, device = DEVICE) # [m, out_features_pad - out_features]
         grad_out = torch.cat([grad_out, out_pad], dim=1) # [m * out_features_pad] = [m, p*k]
 
         # 2. x=x.flatten(1)
         # input: [m, p**k]
-        grad = grad_out.view(M, P, 1, K) # [m, p, 1, k]
+        grad_out = grad_out.view(M, P, 1, K) # [m, p, 1, k]
 
         # 3. x = morr_output_scale.matmul(x)  # [1, 1, 1, q] x [bs, p, q, k] = [bs, p, 1, k]
         # dL/d(morr_output_scale)
         if ctx.needs_input_grad[3]:
-            grad_s = grad.matmul(x_morr.transpose(-2, -1)) # [bs,p,1,q]
+            grad_s = grad_out.matmul(x_morr.transpose(-2, -1)) # [bs, p, 1, q]
             grad_s = grad_s.sum(dim=(0, 1)) # [1, 1, 1, q] broadcast-compatible 
         else:
             grad_s = None
-
         # dL/dx
         grad_x = morr_output_scale.transpose(-2, -1).matmul(grad_out) # [bs, p, q, k]
 
         # 4. x = mrr_roundtrip_phase_to_tr(x)
-        denominator = input.cos().mul_(c1).add_(c2 + c3)
+        denominator = x_mrr.cos().mul_(c1).add_(c2 + c3)
         if intensity:
             denominator.square_()
-            numerator = input.sin().mul_(c4)
+            numerator = x_mrr.sin().mul_(c4)
         else:
-            numerator = input.sin().mul_(c4 / 2)
+            numerator = x_mrr.sin().mul_(c4 / 2)
             denominator = (
                 denominator.sub(1).pow_(1.5).mul_(denominator.sub(c3).sqrt_())
             )
@@ -602,6 +604,8 @@ def _morr_linear_backward(ctx, grad_output):
 
         # 6. x = weight.matmul(x) [1, p, q, k, k] * [bs, 1, q, k, 1] = [bs, p, q, k, 1]
         grad_x = grad_x.unsqueeze(-1) # [bs, p, q, k, 1]
+        grad_morr_matmul = grad_x     # stash for weight gradient
+        
         # dL/dx
         grad_x = torch.matmul(w_morr.transpose(-1, -2), grad_x) # [1, p, q, k, k] x [bs, p, q, k, 1] = [bs, p, q, k, 1]
         grad_x = grad_x.sum(dim=1, keepdim=True) # [bs, p, q, k, 1] -> [bs, 1, q, k, 1]
@@ -620,28 +624,25 @@ def _morr_linear_backward(ctx, grad_output):
     if ctx.needs_input_grad[1]:
         
         # 0. gradient after x = weight.matmul(x)
-        dY5 = torch.zeros_like(...).unsqueeze(-1) # [bs, p, q, k, 1]
+        # grad_morr_matmul # [bs, p, q, k, 1]
 
         # 1. x = weight.matmul(x)
-        dX5 = (weight.transpose(-1,-2) @ dY5) # [bs,p,q,k,1]
-        dX5 = dX5.sum(dim=1, keepdim=True) # [bs,1,q,k,1]
-        dX = dX5.squeeze(1,-1) # [bs,q,k]
-        
-        dW5_batch = dY5 @ x.transpose(-1,-2) # [bs,p,q,k,k]
-        dW5 = dW5_batch.sum(dim=0, keepdim=True) # [1,p,q,k,k]
+        grad_w = torch.matmul(grad_morr_matmul, x_morr.transpose(-1,-2)) # [bs,p,q,k,k]
+        grad_w = grad_w.sum(dim=0, keepdim=True) # [1,p,q,k,k]
 
         # 2. weight = toeplitz(weight)
-        k = dW5.size(-1)
-        row = torch.arange(k, device=dW5.device)[:, None]        # (k,1)
-        col = torch.arange(k, device=dW5.device)[None, :]        # (1,k)
-        idx = (col - row) & (k - 1)  if k & (k-1) == 0 else (col - row + k) % k
-        
-        grad_w = dW5.new_zeros(dW5.shape[:-1])
-        grad_w.scatter_add_(-1, idx.expand_as(dW5), dW5).squeeze(0) # [p, q, k]
+        k = grad_w.size(-1)
+        row = torch.arange(k)[:, None]        # (k,1)
+        col = torch.arange(k)[None, :]        # (1,k)
+        idx = (row - col) & (k - 1) if (k & (k-1)) == 0 else (row - col + k) % k
+
+        idx = idx.unsqueeze(0).unsqueeze(0).unsqueeze(0).to(DEVICE)
+        buffer = torch.zeros_like(grad_w, device=DEVICE)
+        buffer.scatter_add_(-2, idx, grad_w) # [1, p, q, k, k]
+        grad_w = buffer.sum(dim=-1, keepdim=True).squeeze(0).squeeze(-1)
 
         # 3. build_weight() weight = self.weight.abs()
         grad_w = grad_w * weight.sign()
-
 
 
     return (
