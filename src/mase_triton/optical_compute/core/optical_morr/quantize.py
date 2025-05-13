@@ -35,9 +35,9 @@ def uniform_quantize_new(x: tl.tensor, k, scale, zero_point, gradient_clip=False
 
 @triton.jit
 def _input_quantize_fn(
-    x: tl.tensor, quant_ratio, training, in_bit, alg,  # self.training
+    x: tl.tensor, training, in_bit, alg="dorefa", quant_ratio=1.0 # self.training
 ):
-    # init
+    # --- init ---
     if alg == "dorefa":
         uniform_q = uniform_quantize(k=in_bit)
     elif alg == "normal":
@@ -57,6 +57,7 @@ def _input_quantize_fn(
     else:
         obs = None
 
+    # --- forward ---
     if quant_ratio > 1.0 and training:
         rand_vals = tl.random(x.shape)
         quant_noise_mask = tl.where(rand_vals > quant_ratio, 1, 0)

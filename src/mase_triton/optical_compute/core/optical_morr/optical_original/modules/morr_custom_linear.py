@@ -479,8 +479,8 @@ class AllPassMORRLinear(ONNBaseLayer):
             x = torch.cat([x, self.x_zero_pad], dim=1)
 
         # Find max values for uniform scaling
-        w_max = weight.abs().max()
-        x_max = x.abs().max(dim=1, keepdim=True)[0]
+        # w_max = weight.abs().max()
+        # x_max = x.abs().max(dim=1, keepdim=True)[0]
 
         x = x.view(-1, self.grid_dim_x, self.miniblock)
 

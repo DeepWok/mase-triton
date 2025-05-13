@@ -447,7 +447,8 @@ class AllPassMORRCirculantLinear(ONNBaseLayer):
         is_transformer = len(x.shape) == 3
         if is_transformer:
             B, N, D = x.shape
-
+            x = x.view(-1, D)
+            
         assert (
             x.size(-1) == self.in_features
         ), f"[E] Input dimension does not match the weight size {self.out_features, self.in_features}, but got input size ({tuple(x.size())}))"
@@ -455,6 +456,7 @@ class AllPassMORRCirculantLinear(ONNBaseLayer):
             x = self.input_quantizer(x)
 
         weight, morr_output_scale = self.build_weight()
+        
         if self.in_features_pad > self.in_features:
             if self.x_zero_pad is None or self.x_zero_pad.size(0) != x.size(0):
                 self.x_zero_pad = torch.zeros(
