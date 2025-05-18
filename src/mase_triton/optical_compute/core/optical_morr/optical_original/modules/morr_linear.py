@@ -452,6 +452,7 @@ class AllPassMORRCirculantLinear(ONNBaseLayer):
         assert (
             x.size(-1) == self.in_features
         ), f"[E] Input dimension does not match the weight size {self.out_features, self.in_features}, but got input size ({tuple(x.size())}))"
+        
         if self.in_bit < 16:
             x = self.input_quantizer(x)
 

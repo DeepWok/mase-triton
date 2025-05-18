@@ -68,13 +68,14 @@ def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
     torch_output = module(x)
     
     # cuda kernel inference
-    triton_output, seed,  *_ = morr_linear_fn( 
+    triton_output, seed,  *_ = morr_linear_fn_mem( 
         x,
         weight,
         morr_input_bias = module.morr_input_bias,
         morr_output_scale = module.morr_output_scale,
         bias = module.bias,
-        morr_bias = module.morr_bias.detach(),
+        morr_input_scale = module.morr_input_scale,
+        morr_bias = module.morr_bias.detach() if module.morr_bias != None else None,
         grid_dim_x = module.grid_dim_x,
         grid_dim_y = module.grid_dim_y,
         miniblock = miniblock,

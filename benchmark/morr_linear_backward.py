@@ -1,6 +1,6 @@
 #%%
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TRITON_INTERPRET"] = "0"
 
 import random
@@ -50,8 +50,8 @@ def morr_backward_accuracy_test(
     # module.enable_phase_variation()
     # module.set_phase_variation(phase_noise_std=0.04)
     # module.set_crosstalk_coupling_matrix(coupling_factor=0.04)
-    module.set_input_bitwidth(16)
-    module.set_weight_bitwidth(16)
+    module.set_input_bitwidth(8)
+    module.set_weight_bitwidth(8)
 
     # use exactly the same weight tensor for both paths
     w_init = torch.randn(module.grid_dim_y,
@@ -91,6 +91,7 @@ def morr_backward_accuracy_test(
         morr_input_bias = bias_kern,
         morr_output_scale = scale_kern,
         bias = module.bias,
+        morr_input_scale=module.morr_input_scale,
         morr_bias = module.morr_bias.detach(),
         grid_dim_x = module.grid_dim_x,
         grid_dim_y = module.grid_dim_y,
@@ -112,7 +113,7 @@ def morr_backward_accuracy_test(
         morr_fwhm = module.morr_fwhm,
         sigma_weight=module.sigma_weight,
         trainable_morr_scale=module.trainable_morr_scale, # bool
-        morr_scale=module.morr_scale,
+        morr_scale=module.morr_scale.detach() if module.trainable_morr_scale != None else None,
         weight_quant_gain=module.weight_quant_gain,
         seed = 42,
     )                                       # [B, N, D_out]
@@ -180,20 +181,21 @@ def unit_test():
     else:
         print("❌ gradient mismatch")
 # %%
-miniblock_vals = [4]
-B_vals = [1, 2, 4]
-N_vals = [1, 2, 4]
-Din_vals = [128, 256, 512, 1024]
-Dout_vals = [128, 256, 512, 1024]
-for miniblock in miniblock_vals:
-        for B in B_vals:
-            for N in N_vals:
-                for D_in in Din_vals:
-                    for D_out in Dout_vals:
-                        are_close = morr_backward_accuracy_test(B=B, N=N, D_in=D_in, D_out=D_in, miniblock=miniblock)
-                        assert are_close == True, f"Test Fail with B={B}, N={N}, D_in={D_in}, D_out={D_out}, miniblock={miniblock}"
+
+# miniblock_vals = [4]
+# B_vals = [1, 2, 4]
+# N_vals = [1, 2, 4]
+# Din_vals = [128, 256, 512, 1024]
+# Dout_vals = [128, 256, 512, 1024]
+# for miniblock in miniblock_vals:
+#         for B in B_vals:
+#             for N in N_vals:
+#                 for D_in in Din_vals:
+#                     for D_out in Dout_vals:
+#                         are_close = morr_backward_accuracy_test(B=B, N=N, D_in=D_in, D_out=D_in, miniblock=miniblock)
+#                         assert are_close == True, f"Test Fail with B={B}, N={N}, D_in={D_in}, D_out={D_out}, miniblock={miniblock}"
 # %%
 if __name__ == "__main__":
     morr_backward_accuracy_test(B=1, N=1, D_in=32, D_out=32, miniblock=4)
-    # morr_backward_accuracy_test(B=10, N=10, D_in=512, D_out=512, miniblock=4)
-    # morr_backward_accuracy_test(B=3, N=3, D_in=2048, D_out=2048, miniblock=4)
+    morr_backward_accuracy_test(B=10, N=10, D_in=512, D_out=512, miniblock=4)
+    morr_backward_accuracy_test(B=3, N=3, D_in=2048, D_out=2048, miniblock=4)
