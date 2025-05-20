@@ -85,7 +85,7 @@ def morr_backward_accuracy_test(
     grad_b_ref = module.morr_input_bias.grad.detach().clone()
     
     # 3. Forward + backward – triton kernel
-    out_kern, *_ = morr_linear_fn(
+    out_kern, *_ = morr_linear_fn_mem(
         x_kern,
         w_kern,
         morr_input_bias = bias_kern,
@@ -182,18 +182,18 @@ def unit_test():
         print("❌ gradient mismatch")
 # %%
 
-# miniblock_vals = [4]
-# B_vals = [1, 2, 4]
-# N_vals = [1, 2, 4]
-# Din_vals = [128, 256, 512, 1024]
-# Dout_vals = [128, 256, 512, 1024]
-# for miniblock in miniblock_vals:
-#         for B in B_vals:
-#             for N in N_vals:
-#                 for D_in in Din_vals:
-#                     for D_out in Dout_vals:
-#                         are_close = morr_backward_accuracy_test(B=B, N=N, D_in=D_in, D_out=D_in, miniblock=miniblock)
-#                         assert are_close == True, f"Test Fail with B={B}, N={N}, D_in={D_in}, D_out={D_out}, miniblock={miniblock}"
+miniblock_vals = [4]
+B_vals = [1, 2, 4]
+N_vals = [1, 2, 4]
+Din_vals = [128, 256, 512, 1024]
+Dout_vals = [128, 256, 512, 1024]
+for miniblock in miniblock_vals:
+        for B in B_vals:
+            for N in N_vals:
+                for D_in in Din_vals:
+                    for D_out in Dout_vals:
+                        are_close = morr_backward_accuracy_test(B=B, N=N, D_in=D_in, D_out=D_in, miniblock=miniblock)
+                        assert are_close == True, f"Test Fail with B={B}, N={N}, D_in={D_in}, D_out={D_out}, miniblock={miniblock}"
 # %%
 if __name__ == "__main__":
     morr_backward_accuracy_test(B=1, N=1, D_in=32, D_out=32, miniblock=4)

@@ -606,6 +606,7 @@ def _morr_linear_setup_context(ctx, inputs, output):
         x_quant, # x input for input_quantize_fn()
         w_quant, # w input for weight_quantize_fn()
         origin_morr_output_scale, # original morr_output_scale
+        finegrain_drop_mask,
     )
     ctx.tensor_shape = tensor_shape
     ctx.mrr_para = mrr_para
@@ -654,6 +655,7 @@ def _morr_linear_backward(ctx, grad_output, *ignored):
         x_quant,
         w_quant,
         origin_morr_output_scale,
+        finegrain_drop_mask
     ) = ctx.saved_tensors
 
     M, P, Q, K  = ctx.tensor_shape
@@ -809,6 +811,8 @@ def _morr_linear_backward(ctx, grad_output, *ignored):
         grad_w = buffer.sum(dim=-1, keepdim=True).squeeze(0).squeeze(-1) # [p, q, k]
 
         # 3. build_weight()
+        if finegrain_drop_mask is not None:
+            grad_w = grad_w * finegrain_drop_mask.float()
         # morr_scale: [p, q, 1]
         grad_morr_input_scale = None
         if ctx.w_bit < 16:
