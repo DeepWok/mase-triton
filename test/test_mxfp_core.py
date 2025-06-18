@@ -9,10 +9,92 @@ from mase_triton.mxfp.meta import (
     OCP_MXFP6_E3M2,
     OCP_MXFP8_E4M3,
     OCP_MXFP8_E5M2,
+    MXFPElementMeta,
     MXFPMeta,
+    MXFPScaleMeta,
+)
+from mase_triton.utils.bit_repr import get_binary_repr
+from mase_triton.utils.train_utils import set_seed
+
+set_seed(42)
+
+_DEBUG_MXFP8_E4M3 = MXFPMeta(
+    block_size=4,
+    scale=MXFPScaleMeta(exponent_bits=8),
+    element=MXFPElementMeta(exponent_bits=4, mantissa_bits=3),
 )
 
 
-@pytest.mark.parametrize("mxfp_format", [OCP_MXFP8_E4M3])
-@pytest.mark.parametrize("n_groups", [2])
-def test_extract_mxfp_components(mxfp_format: MXFPMeta, n_groups: int): ...
+@pytest.mark.parametrize(
+    "mxfp_format",
+    [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
+)
+@pytest.mark.parametrize("n_groups", [16])
+def test_extract_mxfp_components_normal(mxfp_format: MXFPMeta, n_groups: int):
+    n_elements = mxfp_format.block_size * n_groups
+    w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0
+    scales, elements = mxfp_core.extract_mxfp_components(w, mxfp_meta=mxfp_format)
+    scales_ref, elements_ref = mxfp_fake.extract_mxfp_components(
+        w, mxfp_meta=mxfp_format
+    )
+
+    assert scales.dtype == torch.uint8
+    assert elements.dtype == torch.uint8
+    assert scales.shape == (n_groups, 1)
+    assert elements.shape == (n_groups, mxfp_format.block_size)
+
+    assert torch.all(scales == scales_ref)
+    assert torch.all(elements == elements_ref)
+
+
+@pytest.mark.parametrize(
+    "mxfp_format",
+    [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
+)
+@pytest.mark.parametrize("n_groups", [16])
+def test_extract_mxfp_components_outliers(mxfp_format: MXFPMeta, n_groups: int):
+    n_elements = mxfp_format.block_size * n_groups
+    w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0
+    for i in range(n_groups):
+        w[i * mxfp_format.block_size] *= 2**32
+    scales, elements = mxfp_core.extract_mxfp_components(w, mxfp_meta=mxfp_format)
+    scales_ref, elements_ref = mxfp_fake.extract_mxfp_components(
+        w, mxfp_meta=mxfp_format
+    )
+    assert scales.dtype == torch.uint8
+    assert elements.dtype == torch.uint8
+    assert scales.shape == (n_groups, 1)
+    assert elements.shape == (n_groups, mxfp_format.block_size)
+    assert torch.all(scales == scales_ref)
+    assert torch.all(elements == elements_ref)
+
+
+@pytest.mark.parametrize(
+    "mxfp_format",
+    [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
+)
+@pytest.mark.parametrize("n_groups", [16])
+def test_compose_mxfp_tensor(mxfp_format: MXFPMeta, n_groups: int):
+    n_elements = mxfp_format.block_size * n_groups
+    w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0
+    scales, elements = mxfp_core.extract_mxfp_components(w, mxfp_meta=mxfp_format)
+
+    w_dq = mxfp_core.compose_mxfp_tensor(
+        shared_scales=scales,
+        elements=elements,
+        mxfp_meta=mxfp_format,
+    )
+    w_dq_ref = mxfp_fake.compose_mxfp_tensor(
+        shared_scales=scales,
+        elements=elements,
+        mxfp_meta=mxfp_format,
+    )
+
+    assert w_dq.dtype == torch.bfloat16
+    assert w_dq.shape == (n_elements,)
+    assert torch.all(w_dq == w_dq_ref)
+
+
+if __name__ == "__main__":
+    # test_extract_mxfp_components_normal(_DEBUG_MXFP8_E4M3, 2)
+    test_compose_mxfp_tensor(_DEBUG_MXFP8_E4M3, 2)
