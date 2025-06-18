@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 
-from .dtypes import MXFPMeta
+from .meta import MXFPMeta
 
 
 def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Tensor]:
@@ -82,11 +82,13 @@ def compose_mxfp_tensor(
     n_blocks = shared_scales.shape[0]
     el_exp_bits = mxfp_meta.element.exponent_bits
     el_man_bits = mxfp_meta.element.mantissa_bits
+    el_exp_man_bits = mxfp_meta.element.n_bits - 1
     el_exp_bias = 2 ** (el_exp_bits - 1) - 1
 
     exp_max = shared_scales.to(torch.uint16).view(torch.int16)
     exp_max = exp_max.expand(-1, B)  # [n_blocks, B]
 
+    underflow_mask = elements & (2**el_exp_man_bits - 1) == 0
     elements = elements.to(torch.int16)
     sign = elements << (15 - (el_exp_bits + el_man_bits))
     sign = sign & 0x8000
@@ -100,5 +102,6 @@ def compose_mxfp_tensor(
 
     dequantized = sign | exp | mantissa
     dequantized = dequantized.view(torch.bfloat16)
+    dequantized = torch.where(underflow_mask, 0.0, dequantized)
     dequantized = dequantized.reshape(n_blocks * B)
     return dequantized

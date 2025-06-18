@@ -24,7 +24,12 @@ class MXFPElementMeta:
             f"Invalid exponent and mantissa bits: {self.exponent_bits}, {self.mantissa_bits}. "
             f"Legal values are: {legal_exp_mantissa}."
         )
-        self.n_bits = self.exponent_bits + self.mantissa_bits + 1
+        n_bits = self.exponent_bits + self.mantissa_bits + 1
+        assert n_bits <= 8, (
+            f"Total bits for element ({n_bits}) exceeds 8 bits. "
+            "The sum of exponent bits, mantissa bits, and sign bit must be 8 or less."
+        )
+        self.n_bits = n_bits
 
 
 @dataclass
@@ -59,11 +64,3 @@ OCP_MXFP4_E2M1 = MXFPMeta(
     scale=MXFPScaleMeta(exponent_bits=8),
     element=MXFPElementMeta(exponent_bits=2, mantissa_bits=1),
 )
-
-
-@dataclass
-class MXFPComponents:
-    shape: tuple[int, ...]
-    scales: int
-    elements: int
-    meta: MXFPMeta
