@@ -285,7 +285,7 @@ def morr_propagate_kernel(
 @torch.library.custom_op(
     f"{PACKAGE_NAME}::optical_morr_linear_linear_fn", mutates_args={},
 )
-def morr_linear_fn_mem(
+def morr_linear_fn(
     x: Tensor,
     weight: Tensor,
     morr_input_bias: Tensor,
@@ -953,6 +953,6 @@ def _morr_linear_backward(ctx, grad_output, *ignored):
     )
 
 
-morr_linear_fn_mem.register_autograd(
+morr_linear_fn.register_autograd(
     _morr_linear_backward, setup_context=_morr_linear_setup_context,
 )
