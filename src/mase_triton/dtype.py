@@ -15,3 +15,4 @@ TORCH_DTYPE_TO_TRITON = {
     torch.float8_e4m3fn: tl.float8e4nv,
     torch.float8_e5m2: tl.float8e5,
 }
+

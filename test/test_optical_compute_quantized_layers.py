@@ -27,16 +27,19 @@ def test_optical_compute_quantized_linear_simple():
         device=DEVICE,
         dtype=torch.float32,
     )
-    x = torch.rand(8, in_features, device=DEVICE, dtype=torch.float32)
+    fc1.train()
+    fc2.train()
+    x = torch.rand(2, 8, in_features, device=DEVICE, dtype=torch.float32)
     x = x * 2 - 1
     x.requires_grad_()
     x = fc1(x)
     x = torch.relu(x)
     y = fc2(x)
-    assert y.shape == (8, out_features)
+    assert y.shape == (2, 8, out_features)
     logger.info(f"{fc1}")
     loss = torch.sum(y)
     loss.backward()
+    assert torch.all(torch.isfinite(fc1.weight.grad))
 
 
 def test_optical_compute_quantized_linear_forward_error():
@@ -58,10 +61,7 @@ def test_optical_compute_quantized_linear_forward_error():
     logger.info("Test passed: output is close to reference")
 
 
-@pytest.mark.skipif(
-    not all_packages_are_available(("tqdm", "datasets")),
-    reason="Requires tqdm and datasets",
-)
+@pytest.mark.skipif(not all_packages_are_available(("tqdm", "datasets")), reason="Requires tqdm and datasets")
 def test_optical_compute_quantized_linear_toy_training():
     from tqdm import tqdm
     from datasets import load_dataset
@@ -85,17 +85,8 @@ def test_optical_compute_quantized_linear_toy_training():
     class IrisDataSet(Dataset):
         def __init__(self):
             self.dataset = load_dataset("scikit-learn/iris", split="train")
-            self.feature_entries = [
-                "SepalLengthCm",
-                "SepalWidthCm",
-                "PetalLengthCm",
-                "PetalWidthCm",
-            ]
-            self.label_map = {
-                "Iris-setosa": 0,
-                "Iris-versicolor": 1,
-                "Iris-virginica": 2,
-            }
+            self.feature_entries = ["SepalLengthCm", "SepalWidthCm", "PetalLengthCm", "PetalWidthCm"]
+            self.label_map = {"Iris-setosa": 0, "Iris-versicolor": 1, "Iris-virginica": 2}
 
         def __len__(self):
             return len(self.dataset)
@@ -112,9 +103,7 @@ def test_optical_compute_quantized_linear_toy_training():
         def __init__(self, in_features, hidden_size, out_features):
             super().__init__()
             self.bn = torch.nn.BatchNorm1d(in_features)
-            self.fc1 = OpticalTransformerLinear(
-                in_features=in_features, out_features=hidden_size, bias=True
-            )
+            self.fc1 = OpticalTransformerLinear(in_features=in_features, out_features=hidden_size, bias=True)
 
         def forward(self, x):
             x = self.bn(x)
@@ -172,6 +161,6 @@ def test_optical_compute_quantized_linear_toy_training():
 
 if __name__ == "__main__":
     set_logging_verbosity("info")
-    # test_optical_compute_quantized_linear_simple()
-    # test_optical_compute_quantized_linear_forward_error()
-    test_optical_compute_quantized_linear_toy_training()
+    test_optical_compute_quantized_linear_simple()
+    test_optical_compute_quantized_linear_forward_error()
+    # test_optical_compute_quantized_linear_toy_training()

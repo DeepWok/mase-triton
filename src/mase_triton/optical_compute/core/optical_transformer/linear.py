@@ -16,91 +16,35 @@ from .utils import _noisy_quantize
 def _get_autotune_configs_ot_qlinear_forward_kernel():
     return [
         triton.Config(
-            {
-                "BLOCK_SIZE_M": 128,
-                "BLOCK_SIZE_N": 256,
-                "BLOCK_SIZE_K": 64,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=3,
-            num_warps=8,
+            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 8}, num_stages=3, num_warps=8
         ),
         triton.Config(
-            {
-                "BLOCK_SIZE_M": 64,
-                "BLOCK_SIZE_N": 256,
-                "BLOCK_SIZE_K": 32,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=4,
-            num_warps=4,
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
         ),
         triton.Config(
-            {
-                "BLOCK_SIZE_M": 128,
-                "BLOCK_SIZE_N": 128,
-                "BLOCK_SIZE_K": 32,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=4,
-            num_warps=4,
+            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
         ),
         triton.Config(
-            {
-                "BLOCK_SIZE_M": 128,
-                "BLOCK_SIZE_N": 64,
-                "BLOCK_SIZE_K": 32,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=4,
-            num_warps=4,
+            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
         ),
         triton.Config(
-            {
-                "BLOCK_SIZE_M": 64,
-                "BLOCK_SIZE_N": 128,
-                "BLOCK_SIZE_K": 32,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=4,
-            num_warps=4,
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
         ),
         triton.Config(
-            {
-                "BLOCK_SIZE_M": 128,
-                "BLOCK_SIZE_N": 32,
-                "BLOCK_SIZE_K": 32,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=4,
-            num_warps=4,
+            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
         ),
         triton.Config(
-            {
-                "BLOCK_SIZE_M": 64,
-                "BLOCK_SIZE_N": 32,
-                "BLOCK_SIZE_K": 32,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=5,
-            num_warps=2,
+            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=5, num_warps=2
         ),
         triton.Config(
-            {
-                "BLOCK_SIZE_M": 32,
-                "BLOCK_SIZE_N": 64,
-                "BLOCK_SIZE_K": 32,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=5,
-            num_warps=2,
+            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=5, num_warps=2
         ),
     ]
 
 
-@triton.autotune(
-    configs=_get_autotune_configs_ot_qlinear_forward_kernel(), key=["M", "N", "K"],
-)
+# *: Transformers & Accelerate DDP does not work with this Triton kernel
+
+
 @triton.jit
 def _ot_qlinear_forward_kernel(
     a_ptr,
@@ -212,7 +156,8 @@ def _ot_qlinear_forward_kernel(
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::optical_transformer_quantized_linear_fn", mutates_args={},
+    f"{PACKAGE_NAME}::optical_transformer_quantized_linear_fn",
+    mutates_args={},
 )
 def ot_qlinear_fn(
     x: Tensor,
@@ -230,26 +175,16 @@ def ot_qlinear_fn(
     skip_quantize: bool = False,
 ) -> tuple[Tensor, int]:
 
-    assert x.dtype in (
-        torch.bfloat16,
-        torch.float16,
-        torch.float32,
-    ), f"Unsupported dtype {x.dtype}"
+    assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {x.dtype}"
     assert x.is_contiguous(), "Input tensor must be contiguous"
     assert weight.ndim == 2, f"Weight tensor must be 2D, got {weight.ndim}D"
-    assert weight.dtype in (
-        torch.bfloat16,
-        torch.float16,
-        torch.float32,
-    ), f"Unsupported dtype {weight.dtype}"
+    assert weight.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {weight.dtype}"
 
     ori_x_shape = x.size()
     x = x.reshape(-1, ori_x_shape[-1])
 
     if bias is not None:
-        assert (
-            bias.shape[0] == weight.shape[0]
-        ), f"Bias shape {bias.shape} does not match weight shape {weight.shape}"
+        assert bias.shape[0] == weight.shape[0], f"Bias shape {bias.shape} does not match weight shape {weight.shape}"
 
     M, K = x.shape
     N, K2 = weight.shape
@@ -260,9 +195,7 @@ def ot_qlinear_fn(
     else:
         output = torch.tile(bias, (M, 1)).to(x.dtype)
 
-    grid = lambda meta: (
-        triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),
-    )
+    grid = lambda meta: (triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),)
 
     _ot_qlinear_forward_kernel[grid](
         x,
@@ -292,6 +225,10 @@ def ot_qlinear_fn(
         INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
         SKIP_QUANTIZE=skip_quantize,
         USE_BIAS=bias is not None,
+        BLOCK_SIZE_M=128,
+        BLOCK_SIZE_N=256,
+        BLOCK_SIZE_K=64,
+        GROUP_SIZE_M=8,
     )
 
     output = output.reshape(ori_x_shape[:-1] + (N,))
@@ -343,27 +280,13 @@ def _ot_qlinear_backward(ctx, *grad_outputs):
     grad_x = grad_weight = grad_bias = None
 
     if ctx.needs_input_grad[0]:
-        grad_x = grad_outputs[0].mm(weight)
+        grad_x = grad_outputs[0] @ weight
     if ctx.needs_input_grad[1]:
-        grad_weight = grad_outputs[0].T.mm(x)
+        grad_weight = grad_outputs[0].transpose(-1, -2) @ x
     if bias is not None and ctx.needs_input_grad[2]:
         grad_bias = grad_outputs[0].sum(0)
 
-    return (
-        grad_x,
-        grad_weight,
-        grad_bias,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+    return grad_x, grad_weight, grad_bias, None, None, None, None, None, None, None, None, None, None
 
 
 def _ot_qlinear_setup_context(ctx, inputs, output):
@@ -371,7 +294,8 @@ def _ot_qlinear_setup_context(ctx, inputs, output):
 
 
 ot_qlinear_fn.register_autograd(
-    _ot_qlinear_backward, setup_context=_ot_qlinear_setup_context,
+    _ot_qlinear_backward,
+    setup_context=_ot_qlinear_setup_context,
 )
 
 

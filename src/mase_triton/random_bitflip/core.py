@@ -230,7 +230,8 @@ def _get_philox_n_rounds(n_halves: int):
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::random_bitflip_random_bitflip_forward", mutates_args={},
+    f"{PACKAGE_NAME}::random_bitflip_random_bitflip_forward",
+    mutates_args={},
 )
 def random_bitflip_fn(
     x: Tensor,
@@ -406,7 +407,8 @@ def _random_bitflip_zero_outed_backward_kernel(
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::_random_bitflip_backward", mutates_args={},
+    f"{PACKAGE_NAME}::_random_bitflip_backward",
+    mutates_args={},
 )
 def _random_bitflip_backward(
     x: Tensor,
@@ -528,9 +530,7 @@ def _random_bitflip_backward_cpu(
     zero_out_threshold: float | None,
 ) -> Tensor:
     # TODO: implement the CPU version of random bit flip backward using numpy
-    raise NotImplementedError(
-        "CPU version of random bit flip backward is not implemented yet."
-    )
+    raise NotImplementedError("CPU version of random bit flip backward is not implemented yet.")
 
 
 class RandomBitFlipFunctions:

@@ -191,4 +191,4 @@ if __name__ == "__main__":
     test_random_bitflip_forward_simple()
     # test_random_bitflip_forward_fully_activated()
     # test_random_bitflip_forward_zero_outed()
-    # test_random_bitflip_fn_backward()
+    test_random_bitflip_fn_backward()

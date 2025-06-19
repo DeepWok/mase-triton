@@ -21,11 +21,6 @@ def _get_autotune_configs_ot_quantize_forward_kernel():
     return configs
 
 
-@triton.autotune(
-    configs=_get_autotune_configs_ot_quantize_forward_kernel(),
-    key=["n_elements"],
-    use_cuda_graph=False,
-)
 @triton.jit
 def _ot_quantize_forward_kernel(
     x_ptr,
@@ -84,7 +79,8 @@ def _ot_quantize_forward_kernel(
 
 
 @torch.library.custom_op(
-    f"{PACKAGE_NAME}::optical_transformer_quantize_fn", mutates_args={},
+    f"{PACKAGE_NAME}::optical_transformer_quantize_fn",
+    mutates_args={},
 )
 def ot_quantize_fn(
     x: Tensor,
@@ -95,11 +91,7 @@ def ot_quantize_fn(
     lut_min: float | None,
     quant_mode: str,
 ) -> tuple[Tensor, int]:
-    assert x.dtype in (
-        torch.bfloat16,
-        torch.float16,
-        torch.float32,
-    ), f"Unsupported dtype {x.dtype}"
+    assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {x.dtype}"
     assert x.is_cuda, "Input tensor must be on CUDA device"
     assert quant_mode in ["det", "rand"], f"Unsupported quant_mode {quant_mode}"
     assert lut_min is None or lut_min >= 0.0, "lut_min must be non-negative"
@@ -111,6 +103,7 @@ def ot_quantize_fn(
     n_elements = x.numel()
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
     _ot_quantize_forward_kernel[grid](
         x,
         output,
@@ -123,6 +116,7 @@ def ot_quantize_fn(
         QUANT_MODE=quant_mode,
         ENABLE_LUT_MIN=enable_lut_min,
         INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
+        BLOCK_SIZE=1024,
     )
 
     if quant_mode == "rand":
@@ -167,5 +161,6 @@ def _ot_quantize_forward_fn_cpu(
 
 
 ot_quantize_fn.register_autograd(
-    _ot_quantize_backward, setup_context=_ot_quantize_setup_context,
+    _ot_quantize_backward,
+    setup_context=_ot_quantize_setup_context,
 )
