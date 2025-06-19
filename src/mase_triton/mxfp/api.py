@@ -10,6 +10,22 @@ from .meta import MXFPMeta, MXFPTensorMeta
 def extract_mxfp_components(
     tensor: Tensor, block_dim: int, mxfp_meta: MXFPMeta
 ) -> tuple[Tensor, Tensor, MXFPTensorMeta]:
+    """
+    Extracts the MXFP components from a tensor.
+
+    .. note::
+        The block for exponent sharing is a 1D vector instead of a 2D matrix.
+
+    :param tensor: The input tensor to be quantized.
+    :type tensor: torch.Tensor
+    :param block_dim: The dimension to group the tensor elements into blocks.
+    :type block_dim: int
+    :param mxfp_meta: The metadata for the MXFP format.
+    :type mxfp_meta: MXFPMeta
+
+    :returns: The extracted scales, elements, and tensor metadata.
+    :rtype: tuple[torch.Tensor, torch.Tensor, MXFPTensorMeta]
+    """
     device = str(tensor.device)
     ori_shape = tuple(tensor.shape)
     ndim = len(ori_shape)
@@ -43,6 +59,21 @@ def compose_mxfp_tensor(
     tensor_meta: MXFPTensorMeta,
     dtype: torch.dtype = torch.bfloat16,
 ) -> Tensor:
+    """
+    Compose a tensor from MXFP components.
+
+    :param scales: The shared scales for exponent sharing.
+    :type scales: torch.Tensor
+    :param elements: The elements of the tensor.
+    :type elements: torch.Tensor
+    :param tensor_meta: The metadata for the MXFP tensor.
+    :type tensor_meta: MXFPTensorMeta
+    :param dtype: The desired data type of the output tensor, by default torch.bfloat16.
+    :type dtype: torch.dtype, optional
+
+    :returns: The dequantized tensor.
+    :rtype: torch.Tensor
+    """
     device = tensor_meta.device
 
     if device == "cpu":
