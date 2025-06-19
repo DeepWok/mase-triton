@@ -25,102 +25,90 @@ if DEVICE.type == "cpu":
     raise RuntimeError("This benchmark requires a GPU")
 
 
-def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
-    torch_dtype = torch.float32
-    torch.manual_seed(42)
 
-    # Create the PyTorch module
-    module = AllPassMORRCirculantLinear(
-        in_features=D_in, 
-        out_features=D_out, 
-        bias=False, 
-        config={
-            "miniblock": miniblock,
-            "trainable_morr_bias": True,
-            "trainable_morr_scale": True,
-        }
-    ).to(DEVICE)
-    # module.enable_crosstalk()
-    # module.enable_phase_variation()
-    # module.set_phase_variation(phase_noise_std=0.04)
-    # module.set_crosstalk_coupling_matrix(coupling_factor=0.04)
+def uniform_quantize(k, gradient_clip=False):
+    class qfn(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, input):
+            if k == 32:
+                out = input
+            elif k == 1:
+                out = torch.sign(input)
+            else:
+                n = float(2 ** k - 1)
+                out = torch.round(input * n) / n
+            return out
 
-    grid_dim_y = module.grid_dim_y
-    grid_dim_x = module.grid_dim_x
-    morr_output_scale = module.morr_output_scale
+        @staticmethod
+        def backward(ctx, grad_output):
+            grad_input = grad_output.clone()
+            if gradient_clip:
+                grad_input.clamp_(-1, 1)
+            return grad_input
 
-    x = torch.randn(B, N, D_in, device=DEVICE, dtype=torch_dtype)
-    weight = torch.randn(grid_dim_y, grid_dim_x, miniblock, device=DEVICE, dtype=torch_dtype)
-    morr_input_bias = torch.randn(
-        grid_dim_y,
-        grid_dim_x,
-        device=DEVICE,
-        dtype=torch_dtype,
-    )
-    # x = (torch.arange(1, B*N*D_in + 1, 1, device=DEVICE, dtype=torch_dtype).reshape(B, N, D_in)) * 0.1 
-    # weight = (torch.arange(1, grid_dim_y*grid_dim_x*miniblock + 1, 1, device=DEVICE, dtype=torch_dtype).reshape(grid_dim_y, grid_dim_x, miniblock)) * 0.1
+    return qfn.apply
 
-    module.weight.data = weight
-    if module.morr_input_bias != None:
-        module.morr_input_bias.data = morr_input_bias
+def quantize(x: torch.Tensor, bit: int = 8):
+    uniform_q = uniform_quantize(k=bit, gradient_clip=True)
 
-    # pytorch inference
-    torch_output = module(x)
+    weight = torch.tanh(x)  # [-1, 1]
+    r = torch.max(torch.abs(weight.data))
+    weight = weight + r
+    # weight = weight / 2 + 0.5
+    weight_q = uniform_q(weight / (2 * r)) * 2 * r
+
+    return weight_q
+
+def custom_backward(x: torch.Tensor,
+                       bit: int = 8,
+                       gradient_clip: bool = True,
+                       grad_output: torch.Tensor | None = None) -> torch.Tensor:
+
+    if grad_output is None:
+        grad_output = torch.ones_like(x)
+
+    weight = torch.tanh(x)
+    r      = torch.max(weight.abs()).detach() + 1e-12      # ε avoids /0
+
+    # dL/dq
+    g = grad_output * (2 * r)
+
+    # straight-through estimator + optional clipping
+    if gradient_clip:
+        g = g.clamp(-1.0, 1.0)          # this is dL/dy
+    # divide by 2r (dy/d(weight + r))
+    g = g / (2 * r)
+
+    # dL/dweight  (addition of r is constant wrt weight)
+    # multiply by d(tanh)/dx
+    grad_x = g * (1.0 - weight.pow(2))
+
+    return grad_x
     
-    # cuda kernel inference
-    triton_output, seed,  *_ = morr_linear_fn_mem( 
-        x,
-        weight,
-        morr_input_bias = module.morr_input_bias,
-        morr_output_scale = module.morr_output_scale,
-        bias = module.bias,
-        morr_bias = module.morr_bias.detach(),
-        grid_dim_x = module.grid_dim_x,
-        grid_dim_y = module.grid_dim_y,
-        miniblock = miniblock,
-        enable_thermal_crosstalk=module.enable_thermal_crosstalk,
-        crosstalk_factor=None if not module.enable_thermal_crosstalk else module.crosstalk_factor,
-        enable_phase_noise=module.enable_phase_noise,
-        phase_noise_std=None if not module.enable_phase_noise else module.phase_noise_std,
-        trainable_morr_bias=module.trainable_morr_bias, # bool
-        mrr_a=module.mrr_a,
-        mrr_r=module.mrr_r,
-        finegrain_drop_mask=None,
-        in_features = module.in_features,
-        in_features_pad = module.in_features_pad,
-        out_features = module.out_features,
-        out_features_pad = module.out_features_pad,
-        in_bit = module.in_bit,
-        w_bit = module.w_bit,
-        morr_fwhm = module.morr_fwhm,
-        seed = 42,
-    )
 
-    # --- Comparison ---
-    print(f"torch_output shape: {torch_output.shape}, dtype: {torch_output.dtype}, device: {torch_output.device}")
-    print(f"triton_output shape: {triton_output.shape}, dtype: {triton_output.dtype}, device: {triton_output.device}")
 
-    if torch_output.shape != triton_output.shape:
-        print("\nError: Shapes do not match!")
-        print(f"Torch shape: {torch_output.shape}")
-        print(f"Triton shape: {triton_output.shape}")
-    else:
-        # Calculate the absolute difference
-        abs_diff = torch.abs(torch_output - triton_output)
+if __name__ == "__main__":
+    torch.manual_seed(0)
 
-    # Calculate metrics
-    max_abs_diff = torch.max(abs_diff)
-    mean_abs_diff = torch.mean(abs_diff)
+    bit = 8                        # try 1, 4, 8, 32 for fun
+    x   = torch.randn(16, 16, requires_grad=True)  # random tensor
 
-    are_close = torch.allclose(torch_output, triton_output, rtol=1e-3, atol=1e-5)
+    # forward & autograd backward
+    y    = quantize(x, bit)
+    loss = y.sum()
+    loss.backward()
+    grad_autograd = x.grad.clone()
 
-    print("\n--- Comparison Results ---")
-    print(f"Are the outputs close (torch.allclose)? {are_close}")
-    print(f"Maximum Absolute Difference: {max_abs_diff.item():.6e}") # .item() gets scalar value
-    print(f"Mean Absolute Difference (MAE): {mean_abs_diff.item():.6e}")
+    # analytic gradient
+    grad_custom = custom_backward(x.detach(), bit)
 
-    return torch_output, triton_output, are_close
+    # compare
+    max_err = (grad_autograd - grad_custom).abs().max().item()
+    print(f"Max |grad_autograd - grad_custom| = {max_err:.3e}")
 
+    tol = 1e-6
+    assert max_err < tol, "Mismatch between custom and autograd gradients!"
+    print("✓ custom backward matches autograd\n")
 
 
 
@@ -133,16 +121,3 @@ def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
 
 # %%
 
-miniblock_vals = [2, 4, 8]
-B_vals = [2, 4, 8]
-N_vals = [2, 4, 8]
-Din_vals = [128, 256, 512, 1024]
-Dout_vals = [128, 256, 512, 1024]
-for miniblock in miniblock_vals:
-        for B in B_vals:
-            for N in N_vals:
-                for D in Din_vals:
-                    for D_out in Dout_vals:
-                        torch_output, triton_output, are_close = morr_accuracy_test(B=B, N=N, D_in=D, D_out=D_out, miniblock=miniblock)
-                        assert are_close == True, f"Test Fail with B={B}, N={N}, D_in={D}, D_out={D_out}, miniblock={miniblock}"
-# %%

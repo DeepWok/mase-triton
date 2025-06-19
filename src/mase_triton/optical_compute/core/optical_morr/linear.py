@@ -483,8 +483,14 @@ def morr_linear_fn(
 
     # aux_tensor = (
     #     torch.abs(w_ctx),  # w_morr: weight in propagate_morr matmul
-    #     x_ctx,                  # x_modulator: x before x^2
+    #     x_ctx,                  # x_modulator: x before x^2``
     # )
+    if morr_scale is None:
+        ctx_morr_scale = None
+    elif isinstance(morr_scale, float):
+        ctx_morr_scale = morr_scale
+    else:
+        ctx_morr_scale = morr_scale.clone()
 
     return (
         output, 
@@ -493,7 +499,7 @@ def morr_linear_fn(
         x_ctx, 
         ctx_morr_output_scale, 
         ctx_x_scalematmul, 
-        morr_scale.clone(), 
+        ctx_morr_scale, 
         weight_quant_gain if weight_quant_gain is not None else 0.0,
         ctx_x_quant,
         ctx_w_quant,
@@ -585,7 +591,9 @@ def _morr_linear_setup_context(ctx, inputs, output):
     if trainable_morr_bias:
         x_mrr = x_mrr - morr_bias
 
-    tanh_input_bias = torch.tanh(morr_input_bias.unsqueeze(0).unsqueeze(-1))
+    tanh_input_bias = None
+    if trainable_morr_bias:
+        tanh_input_bias = torch.tanh(morr_input_bias.unsqueeze(0).unsqueeze(-1))
 
     # 3. stash tensors 
     ctx.save_for_backward(
@@ -730,9 +738,13 @@ def _morr_linear_backward(ctx, grad_output, *ignored):
                 if ctx.morr_output_scale_quant_alg == "dorefa_sym":
                     # local recompute: 
                     w_in = torch.tanh(origin_morr_output_scale)                 # [-1, 1]
+                    r = torch.max(w_in.abs()).detach()
+
                     # ignore gradient for r here
+                    grad_output_scale = (grad_output_scale * 2 * r).clamp_(-1.0, 1.0)
+                    grad_output_scale = grad_output_scale * (1.0 / (2 * r)) 
                     grad_output_scale = grad_output_scale * (1.0 - w_in.pow(2))
-                    grad_output_scale = grad_output_scale.clamp_(-1, 1)
+                    
                 else:
                     raise NotImplementedError
         else:
@@ -831,10 +843,15 @@ def _morr_linear_backward(ctx, grad_output, *ignored):
                 pass
             elif ctx.w_quant_alg == "dorefa_pos":
                 # local recompute: 
-                w_in = torch.tanh(w_quant)                 # [-1, 1]
+                w_in = torch.tanh(w_quant)
+                r = torch.max(w_in.abs()).detach() + 1e-12      # ε avoids /0
                 # ignore gradient for r here
+                # grad_w = grad_w * (1.0 - w_in.pow(2))
+                # grad_w = grad_w.clamp_(-1, 1)
+                grad_w = grad_w * (2 * r)
+                grad_w = grad_w.clamp(-1.0, 1.0)
+                grad_w = grad_w / (2 * r)
                 grad_w = grad_w * (1.0 - w_in.pow(2))
-                grad_w = grad_w.clamp_(-1, 1)
             else:
                 raise NotImplementedError
         else:

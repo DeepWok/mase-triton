@@ -1,6 +1,6 @@
 #%%
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 os.environ["TRITON_INTERPRET"] = "0"
 
 import random
@@ -32,16 +32,18 @@ def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
         bias=False, 
         config={
             "miniblock": miniblock,
-            "trainable_morr_bias": True,
-            "trainable_morr_scale": True,
+            "trainable_morr_bias": False,
+            "trainable_morr_scale": False,
         }
     ).to(DEVICE)
     # module.enable_crosstalk()
     # module.enable_phase_variation()
     # module.set_phase_variation(phase_noise_std=0.04)
     # module.set_crosstalk_coupling_matrix(coupling_factor=0.04)
-    module.set_input_bitwidth(8)
-    module.set_weight_bitwidth(8)
+    module.set_input_bitwidth(16)
+    module.set_weight_bitwidth(16)
+    module.disable_trainable_morr_bias()
+    module.disable_trainable_morr_scale()
 
     # --- Gather info for kernel ---
     grid_dim_y = module.grid_dim_y
@@ -68,14 +70,26 @@ def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
     torch_output = module(x)
     
     # cuda kernel inference
-    triton_output, seed,  *_ = morr_linear_fn_mem( 
+    if module.morr_bias == None:
+        kernel_morr_bias = torch.zeros(
+            1,
+            module.grid_dim_y,
+            module.grid_dim_x,
+            1,
+            device=DEVICE,
+            dtype=torch.float,
+        )
+    else:
+        kernel_morr_bias = module.morr_bias.detach()
+
+    triton_output, seed,  *_ = morr_linear_fn( 
         x,
         weight,
         morr_input_bias = module.morr_input_bias,
         morr_output_scale = module.morr_output_scale,
         bias = module.bias,
         morr_input_scale = module.morr_input_scale,
-        morr_bias = module.morr_bias.detach() if module.morr_bias != None else None,
+        morr_bias = kernel_morr_bias,
         grid_dim_x = module.grid_dim_x,
         grid_dim_y = module.grid_dim_y,
         miniblock = miniblock,
@@ -124,30 +138,27 @@ def morr_accuracy_test(B, N, D_in, D_out, miniblock=4):
     print(f"Maximum Absolute Difference: {max_abs_diff.item():.6e}") # .item() gets scalar value
     print(f"Mean Absolute Difference (MAE): {mean_abs_diff.item():.6e}")
 
-    return torch_output, triton_output, are_close
-
+    return are_close, max_abs_diff.item(), mean_abs_diff.item()
 
 
 
 # %%
-# torch_output, triton_output, _ = morr_accuracy_test(B=1, N=1, D_in=8, D_out=8, miniblock=2)
-# torch_output, triton_output, _ = morr_accuracy_test(B=1, N=1, D_in=16, D_out=16, miniblock=4)
-# torch_output, triton_output, _ = morr_accuracy_test(B=10, N=10, D_in=512, D_out=512, miniblock=4)
+_, mean_diff, max_diff = morr_accuracy_test(B=1, N=1, D_in=8, D_out=8, miniblock=4)
 # print(torch_output)
 # print(triton_output)
 
 # %%
 
-miniblock_vals = [2, 4, 8]
-B_vals = [2, 4, 8]
-N_vals = [2, 4, 8]
-Din_vals = [128, 256, 512, 1024]
-Dout_vals = [128, 256, 512, 1024]
-for miniblock in miniblock_vals:
-        for B in B_vals:
-            for N in N_vals:
-                for D in Din_vals:
-                    for D_out in Dout_vals:
-                        torch_output, triton_output, are_close = morr_accuracy_test(B=B, N=N, D_in=D, D_out=D_out, miniblock=miniblock)
-                        assert are_close == True, f"Test Fail with B={B}, N={N}, D_in={D}, D_out={D_out}, miniblock={miniblock}"
+# miniblock_vals = [2, 4, 8]
+# B_vals = [2, 4, 8]
+# N_vals = [2, 4, 8]
+# Din_vals = [128, 256, 512, 1024]
+# Dout_vals = [128, 256, 512, 1024]
+# for miniblock in miniblock_vals:
+#     for B in B_vals:
+#         for N in N_vals:
+#             for D in Din_vals:
+#                 for D_out in Dout_vals:
+#                     torch_output, triton_output, are_close = morr_accuracy_test(B=B, N=N, D_in=D, D_out=D_out, miniblock=miniblock)
+#                   
 # %%

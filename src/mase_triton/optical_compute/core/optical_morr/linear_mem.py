@@ -474,8 +474,7 @@ def morr_linear_fn_mem(
     if is_transformer:
         output = output.view(in_B, in_N, out_features)
 
-    return output, seed, torch.abs(w_ctx), x_ctx, ctx_morr_output_scale, ctx_x_scalematmul, morr_scale.clone(), weight_quant_gain if weight_quant_gain is not None else 0.0
-
+    return output, seed, torch.abs(w_ctx), x_ctx, ctx_morr_output_scale, ctx_x_scalematmul, torch.tensor(morr_scale) if morr_scale != None else torch.tensor(0.0), weight_quant_gain if weight_quant_gain is not None else 0.0
 
 
 def _morr_linear_setup_context(ctx, inputs, output):
@@ -652,7 +651,7 @@ def recompute_activations(
         if ctx.trainable_morr_scale:
             morr_scale = morr_scale * weight_quant_gain
         else:
-            morr_scale = weight_quant_gain
+            morr_scale = morr_scale.fill_(weight_quant_gain)
         
         ctx_morr_scale = morr_scale.clone()
         weight = weight.mul(
