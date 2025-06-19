@@ -105,9 +105,9 @@ def extract_mxfp_components(
         n_elements=n_elements,
         n_blocks=n_groups,
         block_size=B,
-        sc_exp_bits=mxfp_meta.scale.exponent_bits,
-        el_exp_bits=mxfp_meta.element.exponent_bits,
-        el_man_bits=mxfp_meta.element.mantissa_bits,
+        sc_exp_bits=mxfp_meta.scale_exp_bits,
+        el_exp_bits=mxfp_meta.element_exp_bits,
+        el_man_bits=mxfp_meta.element_frac_bits,
         BLK=128,
     )
 
@@ -191,9 +191,9 @@ def compose_mxfp_tensor(
         n_elements=n_elements,
         n_blocks=n_blocks,
         block_size=B,
-        sc_exp_bits=mxfp_meta.scale.exponent_bits,
-        el_exp_bits=mxfp_meta.element.exponent_bits,
-        el_man_bits=mxfp_meta.element.mantissa_bits,
+        sc_exp_bits=mxfp_meta.scale_exp_bits,
+        el_exp_bits=mxfp_meta.element_exp_bits,
+        el_man_bits=mxfp_meta.element_frac_bits,
         BLK=128,
     )
     return output

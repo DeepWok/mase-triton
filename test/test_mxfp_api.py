@@ -1,10 +1,7 @@
 import pytest
 import torch
 
-from mase_triton.mxfp import core as mxfp_core
-from mase_triton.mxfp import fake as mxfp_fake
 from mase_triton.mxfp.api import (
-    MXFPTensorMeta,
     compose_mxfp_tensor,
     extract_mxfp_components,
     flatten_for_quantize,
@@ -16,11 +13,8 @@ from mase_triton.mxfp.meta import (
     OCP_MXFP6_E3M2,
     OCP_MXFP8_E4M3,
     OCP_MXFP8_E5M2,
-    MXFPElementMeta,
     MXFPMeta,
-    MXFPScaleMeta,
 )
-from mase_triton.utils.bit_repr import get_binary_repr
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)

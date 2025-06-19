@@ -20,11 +20,11 @@ def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Ten
         f"Input tensor size {x.numel()} is not divisible by block size {B}."
     )
     n_blocks = x.numel() // B
-    sc_exp_max = 2**mxfp_meta.scale.exponent_bits - 1
-    el_exp_bits = mxfp_meta.element.exponent_bits
+    sc_exp_max = 2**mxfp_meta.scale_exp_bits - 1
+    el_exp_bits = mxfp_meta.element_exp_bits
     el_exp_max = 2**el_exp_bits - 1
     el_exp_bias = 2 ** (el_exp_bits - 1) - 1
-    el_man_bits = mxfp_meta.element.mantissa_bits
+    el_man_bits = mxfp_meta.element_frac_bits
     el_man_max = 2**el_man_bits - 1
 
     device = x.device
@@ -80,9 +80,9 @@ def compose_mxfp_tensor(
 
     B = mxfp_meta.block_size
     n_blocks = shared_scales.shape[0]
-    el_exp_bits = mxfp_meta.element.exponent_bits
-    el_man_bits = mxfp_meta.element.mantissa_bits
-    el_exp_man_bits = mxfp_meta.element.n_bits - 1
+    el_exp_bits = mxfp_meta.element_exp_bits
+    el_man_bits = mxfp_meta.element_frac_bits
+    el_exp_man_bits = mxfp_meta.element_bits - 1
     el_exp_bias = 2 ** (el_exp_bits - 1) - 1
 
     exp_max = shared_scales.to(torch.uint16).view(torch.int16)

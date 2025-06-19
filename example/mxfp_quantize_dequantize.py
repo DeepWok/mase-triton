@@ -2,12 +2,12 @@ import torch
 
 from mase_triton.mxfp.api import compose_mxfp_tensor, extract_mxfp_components
 from mase_triton.mxfp.meta import (
+    OCP_MXFP4_E2M1,
+    OCP_MXFP6_E2M3,
     OCP_MXFP6_E3M2,
     OCP_MXFP8_E4M3,
     OCP_MXFP8_E5M2,
-    MXFPElementMeta,
     MXFPMeta,
-    MXFPScaleMeta,
 )
 from mase_triton.utils.bit_repr import get_binary_repr, get_binary_repr_bf16
 
@@ -17,8 +17,9 @@ def minimal():
     # create a mxfp format
     mxfp_format = MXFPMeta(
         block_size=2,
-        scale=MXFPScaleMeta(exponent_bits=8),
-        element=MXFPElementMeta(exponent_bits=4, mantissa_bits=3),
+        scale_exp_bits=8,
+        element_exp_bits=4,
+        element_frac_bits=3,
     )
 
     w = torch.randn((3, 2), dtype=torch.bfloat16, device="cuda") * 100.0
@@ -35,19 +36,19 @@ def minimal():
     print(get_binary_repr(elements))
     """outputs:
     Original tensor:
-    [['0 10000010 1110010' '0 10000000 1101111']
-     ['0 10000101 1100111' '0 10000101 0000010']
-     ['1 10000011 1111010' '1 10000110 0111010']]
+    [['1 10000110 0001011' '0 10000010 1010011']
+    ['0 10000100 0101111' '0 10000110 1000101']
+    ['1 10000111 0001001' '1 10000100 1011111']]
     Tensor Meta data
-    MXFPTensorMeta(device='cuda:0', shape=(3, 2), block_dim=1, meta=MXFPMeta(block_size=2, scale=Scale(exp_bits=8), element=Element(exp_bits=4, frac_bits=3)))
+    MXFPTensorMeta(device='cuda:0', shape=(3, 2), block_dim=1, meta=MXFPMeta(block_size=2, scale_exp_bits=8, element_exp_bits=4, element_frac_bits=3))
     Shared scales:
-    [['1000 0010']
-     ['1000 0101']
-     ['1000 0110']]
+    [['1000 0110']
+    ['1000 0110']
+    ['1000 0111']]
     Elements (Minifloat)
-    [['0011 1111' '0010 1110']
-     ['0011 1110' '0011 1000']
-     ['1010 0111' '1011 1011']]
+    [['1011 1000' '0001 1101']
+    ['0010 1010' '0011 1100']
+    ['1011 1000' '1010 0101']]
     """
 
 
@@ -69,9 +70,9 @@ def mxfp8_example():
     print("Error ratio: ", err_ratio.item())
     """outputs:
     Tensor Meta data
-    MXFPMeta(block_size=32, scale=Scale(exp_bits=8), element=Element(exp_bits=5, frac_bits=2))
-    Mean abs error:  6.53125
-    Error ratio:  0.08251953125
+    MXFPMeta(block_size=32, scale_exp_bits=8, element_exp_bits=5, element_frac_bits=2)
+    Mean abs error:  6.125
+    Error ratio:  0.08740234375
     """
 
 

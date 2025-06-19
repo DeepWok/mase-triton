@@ -1,9 +1,4 @@
-import torch
 from torch import Tensor
-
-from . import core as mxfp_core
-from . import fake as mxfp_fake
-from .meta import MXFPMeta, MXFPTensorMeta
 
 
 def flatten_for_quantize(tensor: Tensor, block_dim: int) -> Tensor:

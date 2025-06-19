@@ -9,19 +9,17 @@ from mase_triton.mxfp.meta import (
     OCP_MXFP6_E3M2,
     OCP_MXFP8_E4M3,
     OCP_MXFP8_E5M2,
-    MXFPElementMeta,
     MXFPMeta,
-    MXFPScaleMeta,
 )
-from mase_triton.utils.bit_repr import get_binary_repr
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)
 
 _DEBUG_MXFP8_E4M3 = MXFPMeta(
     block_size=4,
-    scale=MXFPScaleMeta(exponent_bits=8),
-    element=MXFPElementMeta(exponent_bits=4, mantissa_bits=3),
+    scale_exp_bits=8,
+    element_exp_bits=4,
+    element_frac_bits=3,
 )
 
 
