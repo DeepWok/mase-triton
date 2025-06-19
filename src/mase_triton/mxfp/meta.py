@@ -12,6 +12,9 @@ class MXFPScaleMeta:
             f"Legal values are: {legal_exponent_bits}."
         )
 
+    def __repr__(self):
+        return f"Scale(exp_bits={self.exponent_bits})"
+
 
 @dataclass
 class MXFPElementMeta:
@@ -31,12 +34,23 @@ class MXFPElementMeta:
         )
         self.n_bits = n_bits
 
+    def __repr__(self):
+        return f"Element(exp_bits={self.exponent_bits}, frac_bits={self.mantissa_bits})"
+
 
 @dataclass
 class MXFPMeta:
     block_size: int
     scale: MXFPScaleMeta
     element: MXFPElementMeta
+
+
+@dataclass
+class MXFPTensorMeta:
+    device: str
+    shape: tuple[int, ...]
+    block_dim: int
+    meta: MXFPMeta
 
 
 OCP_MXFP8_E4M3 = MXFPMeta(
