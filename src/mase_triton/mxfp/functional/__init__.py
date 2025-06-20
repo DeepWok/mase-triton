@@ -5,3 +5,4 @@ from .cast import (
     permute_for_dequantize,
 )
 from .linear import mxfp_linear, parse_mxfp_linear_type
+from .matmul import mxfp_matmul

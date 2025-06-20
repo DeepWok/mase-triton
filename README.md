@@ -41,6 +41,9 @@ pip install mase-triton
         - `extract_mxfp_tensor`: Cast a tensor to MXFP format (extracting the shared exponent and Minifloat elements).
         - `compose_mxfp_tensor`: Cast an MXFP tensor to FP format (composing MXFP components).
         - `mxfp_linear`: functional linear operation with MXFP support.
+        - `mxfp_matmul`: functional matrix multiplication with MXFP support.
+    - [`layers`](/src/mase_triton/mxfp/layers.py)
+        - `MXFPLinearPTQ`: Linear layer with MXFP support for post-training quantization (no back propagation support).
 
 
 ## Dev

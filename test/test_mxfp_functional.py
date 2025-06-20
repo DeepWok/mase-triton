@@ -5,6 +5,7 @@ from mase_triton.mxfp.functional import (
     compose_mxfp_tensor,
     extract_mxfp_components,
     flatten_for_quantize,
+    mxfp_matmul,
     permute_for_dequantize,
 )
 from mase_triton.mxfp.meta import (
@@ -124,10 +125,50 @@ def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim:
         )
 
 
+@pytest.mark.parametrize("x_meta", [None, OCP_MXFP8_E4M3])
+@pytest.mark.parametrize("y_meta", [None, OCP_MXFP8_E4M3])
+@pytest.mark.parametrize("device", [torch.device("cuda"), torch.device("cpu")])
+@pytest.mark.parametrize("backend", ["separate"])
+def test_mxfp_matmul(x_meta: MXFPMeta, y_meta: MXFPMeta, device, backend: str):
+    func_type = ""
+    if x_meta is not None:
+        func_type += "Xq"
+    else:
+        func_type += "X"
+    if y_meta is not None:
+        func_type += "Yq"
+    else:
+        func_type += "Y"
+
+    a = torch.randn((2, 4, 512, 256), dtype=torch.bfloat16, device=device)
+    b = torch.randn((2, 4, 256, 128), dtype=torch.bfloat16, device=device)
+
+    y_ref = torch.matmul(a, b)
+    y = mxfp_matmul(
+        a, b, input_meta=x_meta, other_meta=y_meta, func_type=func_type, backend=backend
+    )
+
+    assert y.shape == y_ref.shape, (
+        f"Output shape {y.shape} does not match reference shape {y_ref.shape}."
+    )
+    avg_err = (y - y_ref).abs().mean()
+    avg_err_ratio = avg_err / y_ref.abs().mean()
+    assert avg_err_ratio < 0.05, (
+        f"Average error ratio {avg_err_ratio} is too high for {func_type}."
+    )
+
+
 if __name__ == "__main__":
     # test_mxfp_components(0)
     # test_mxfp_components(1)
     # test_mxfp_components(2)
 
     # test_quantize_dequantize_1d(OCP_MXFP8_E4M3, 16)
-    test_quantize_dequantize_2d(OCP_MXFP8_E4M3, 16, -1)
+    # test_quantize_dequantize_2d(OCP_MXFP8_E4M3, 16, -1)
+
+    test_mxfp_matmul(
+        x_meta=OCP_MXFP8_E4M3,
+        y_meta=OCP_MXFP8_E4M3,
+        device=torch.device("cuda"),
+        backend="separate",
+    )
