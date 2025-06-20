@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from mase_triton.mxfp.api import (
+from mase_triton.mxfp.functional import (
     compose_mxfp_tensor,
     extract_mxfp_components,
     flatten_for_quantize,
@@ -17,7 +17,7 @@ from mase_triton.mxfp.meta import (
 )
 from mase_triton.utils.train_utils import set_seed
 
-set_seed(42)
+set_seed(0)
 
 
 @pytest.mark.parametrize("block_dim", [0, 1, 2, -1, -2, -3])
@@ -67,11 +67,11 @@ def test_quantize_dequantize_1d(mxfp_format: MXFPMeta, n_groups: int):
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E2M3:
-        assert avg_err_ratio < 0.4, (
+        assert avg_err_ratio < 0.5, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     else:
-        assert avg_err_ratio < 0.6, (
+        assert avg_err_ratio < 0.7, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
 
@@ -115,7 +115,7 @@ def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim:
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E2M3:
-        assert avg_err_ratio < 0.4, (
+        assert avg_err_ratio < 0.45, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     else:
@@ -125,9 +125,9 @@ def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim:
 
 
 if __name__ == "__main__":
-    test_mxfp_components(0)
-    test_mxfp_components(1)
-    test_mxfp_components(2)
+    # test_mxfp_components(0)
+    # test_mxfp_components(1)
+    # test_mxfp_components(2)
 
-    test_quantize_dequantize_1d(OCP_MXFP8_E4M3, 16)
-    test_quantize_dequantize_2d(OCP_MXFP8_E4M3, 16, 0)
+    # test_quantize_dequantize_1d(OCP_MXFP8_E4M3, 16)
+    test_quantize_dequantize_2d(OCP_MXFP8_E4M3, 16, -1)

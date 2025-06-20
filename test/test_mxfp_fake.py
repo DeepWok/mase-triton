@@ -14,6 +14,13 @@ from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)
 
+_DEBUG_MXFP8_E4M3 = MXFPMeta(
+    block_size=4,
+    scale_exp_bits=8,
+    element_exp_bits=4,
+    element_frac_bits=3,
+)
+
 
 @pytest.mark.parametrize(
     "mxfp_format",
@@ -83,6 +90,29 @@ def test_simulated_extract_and_compose_outliers(mxfp_format: MXFPMeta, n_groups:
         )
 
 
+@pytest.mark.parametrize(
+    "mxfp_format",
+    [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
+)
+@pytest.mark.parametrize("n_groups", [16])
+def test_simulated_extract_and_compose_subnormal(mxfp_format: MXFPMeta, n_groups: int):
+    n_elements = mxfp_format.block_size * n_groups
+    largest_subnormal = 0b0000_0000_0111_1111
+    w = torch.randint(
+        0,
+        largest_subnormal,
+        (n_elements,),
+        dtype=torch.int16,
+        device="cuda",
+    ).view(torch.bfloat16)
+    scales, elements = extract_mxfp_components(w, mxfp_meta=mxfp_format)
+    w_dq = compose_mxfp_tensor(scales, elements, mxfp_meta=mxfp_format)
+    assert (w_dq == 0.0).all()
+
+
 if __name__ == "__main__":
     # test_simulated_extract_and_compose_normal(mxfp_format=OCP_MXFP8_E4M3, n_groups=16)
-    test_simulated_extract_and_compose_outliers(mxfp_format=OCP_MXFP8_E4M3, n_groups=2)
+    # test_simulated_extract_and_compose_outliers(mxfp_format=OCP_MXFP8_E4M3, n_groups=2)
+    test_simulated_extract_and_compose_subnormal(
+        mxfp_format=_DEBUG_MXFP8_E4M3, n_groups=2
+    )

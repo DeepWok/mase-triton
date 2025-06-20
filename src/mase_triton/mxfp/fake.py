@@ -27,16 +27,12 @@ def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Ten
     el_man_bits = mxfp_meta.element_frac_bits
     el_man_max = 2**el_man_bits - 1
 
-    device = x.device
-
     x = x.flatten()
     x = x.reshape(n_blocks, B)  # [n_blocks, B]
 
     exp = (x.view(torch.int16) & 0x7F80) >> 7  # 0-255
     exp_max = exp.max(dim=1, keepdim=True).values  # [n_blocks, 1]
-    exp_max = torch.where(
-        exp_max != 0, exp_max, torch.ones(1, dtype=torch.int16, device=device)
-    )
+    flush_to_zero_mask = exp_max == 0
     exp = exp - exp_max
     el_exp = exp + el_exp_bias
     underflow_mask = el_exp < 0
@@ -53,6 +49,7 @@ def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Ten
     sign = sign & 2 ** (el_exp_bits + el_man_bits)
 
     el = sign | (el_exp << el_man_bits) | el_mantissa
+    el = torch.where(flush_to_zero_mask, 0, el)
     el = el.view(torch.uint16).to(torch.uint8)
 
     exp_max = exp_max.clamp(0, sc_exp_max).view(torch.uint16).to(torch.uint8)

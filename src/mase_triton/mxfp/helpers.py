@@ -2,6 +2,9 @@ from torch import Tensor
 
 
 def flatten_for_quantize(tensor: Tensor, block_dim: int) -> Tensor:
+    """
+    Permute the tensor to move the block dimension to the last position and flatten it (for quantization).
+    """
     # Permute the tensor to move the block dimension to the last position and flatten it
     ori_shape = tuple(tensor.shape)
     ndim = len(ori_shape)
@@ -22,6 +25,9 @@ def permute_for_dequantize(
     ori_shape: tuple[int, ...],
     block_dim: int,
 ) -> Tensor:
+    """
+    Reshape the flattened tensor back to its original shape after dequantization.
+    """
     # Permute the flatten tensor back to its original shape
     ndim = len(ori_shape)
     block_dim = block_dim % ndim

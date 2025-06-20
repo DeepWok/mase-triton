@@ -1,6 +1,6 @@
 import torch
 
-from mase_triton.mxfp.api import compose_mxfp_tensor, extract_mxfp_components
+from mase_triton.mxfp.functional import compose_mxfp_tensor, extract_mxfp_components
 from mase_triton.mxfp.meta import (
     OCP_MXFP4_E2M1,
     OCP_MXFP6_E2M3,

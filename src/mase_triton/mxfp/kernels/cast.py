@@ -3,7 +3,7 @@ import triton
 from torch import Tensor
 from triton import language as tl
 
-from .meta import MXFPMeta
+from ..meta import MXFPMeta
 
 
 def _find_block_max(x: Tensor, block_size: int) -> Tensor:
@@ -48,6 +48,7 @@ def _extract_mxfp_components_kernel(
     x = x.cast(tl.int16, bitcast=True)
     block_max = block_max.cast(tl.int16, bitcast=True)
     exp_max = (block_max & 0x7F80) >> 7  # 0-255
+    flush_to_zero_mask = exp_max == 0
     el_exp = (x & 0x7F80) >> 7  # 0-255
     el_exp = (el_exp - exp_max).to(tl.int16)
     el_exp = (el_exp + el_exp_bias).to(tl.int16)
@@ -61,11 +62,12 @@ def _extract_mxfp_components_kernel(
     el_mantissa = el_mantissa >> (7 - el_man_bits)
     el_mantissa = tl.where(underflow_mask, 0, el_mantissa)
     el_mantissa = tl.where(overflow_mask, el_man_max, el_mantissa)
-    sign = x & 0x8000
+    sign = x & -32768  # 0x8000
     sign = sign >> (15 - (el_exp_bits + el_man_bits))
     sign = sign & el_sign_mask
 
     el = sign | (el_exp << el_man_bits) | el_mantissa
+    el = tl.where(flush_to_zero_mask, 0, el)
     el = el.cast(tl.uint8)
     el_ptrs = element_ptr + x_offs
     tl.store(el_ptrs, el, mask=x_offs < n_elements)
@@ -148,7 +150,7 @@ def _compose_mxfp_tensor_kernel(
     exp_max = sc.to(tl.uint16).cast(tl.int16, bitcast=True)
     el = el.to(tl.uint16).cast(tl.int16, bitcast=True)
     el_sign = (el << (15 - el_exp_man_bits)).cast(tl.int16)
-    el_sign = el_sign & 0x8000
+    el_sign = el_sign & -32768  # 0x8000
     el_man = (el & el_man_mask).cast(tl.int16)
     el_man = el_man << (7 - el_man_bits)
 

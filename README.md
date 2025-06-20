@@ -36,6 +36,11 @@ pip install mase-triton
     - [`layers.py`](/src/mase_triton/random_bitflip/layers.py): subclasses of `torch.nn.Module` that can be used in neural networks.
         - `RandomBitflipDropout`
         - `RandomBitflipLinear`
+- MXFP: Simulate MXFP formats (Note that subnormal numbers are flushed to zero)
+    - [`functional`](/src/mase_triton/mxfp/functional/__init__.py)
+        - `extract_mxfp_tensor`: Cast a tensor to MXFP format (extracting the shared exponent and Minifloat elements).
+        - `compose_mxfp_tensor`: Cast an MXFP tensor to FP format (composing MXFP components).
+        - `mxfp_linear`: functional linear operation with MXFP support.
 
 
 ## Dev
