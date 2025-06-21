@@ -3,41 +3,96 @@ Optical Transformers: https://arxiv.org/abs/2302.10360
 """
 
 import torch
-from torch import Tensor
 import triton
 import triton.language as tl
+from torch import Tensor
 
-from ....dtype import TORCH_DTYPE_TO_TRITON
 from ....about import PACKAGE_NAME
-
+from ....dtype import TORCH_DTYPE_TO_TRITON
 from .utils import _noisy_quantize
 
 
 def _get_autotune_configs_ot_qlinear_forward_kernel():
     return [
         triton.Config(
-            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 8}, num_stages=3, num_warps=8
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 256,
+                "BLOCK_SIZE_K": 64,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=3,
+            num_warps=8,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 64,
+                "BLOCK_SIZE_N": 256,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 128,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 64,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 64,
+                "BLOCK_SIZE_N": 128,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 32,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=5, num_warps=2
+            {
+                "BLOCK_SIZE_M": 64,
+                "BLOCK_SIZE_N": 32,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=5,
+            num_warps=2,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=5, num_warps=2
+            {
+                "BLOCK_SIZE_M": 32,
+                "BLOCK_SIZE_N": 64,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=5,
+            num_warps=2,
         ),
     ]
 
@@ -79,7 +134,6 @@ def _ot_qlinear_forward_kernel(
     SKIP_QUANTIZE: tl.constexpr,
     USE_BIAS: tl.constexpr,
 ):
-
     pid = tl.program_id(axis=0)
     num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
     num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
@@ -174,17 +228,22 @@ def ot_qlinear_fn(
     q_seed: int,
     skip_quantize: bool = False,
 ) -> tuple[Tensor, int]:
-
-    assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {x.dtype}"
+    assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), (
+        f"Unsupported dtype {x.dtype}"
+    )
     assert x.is_contiguous(), "Input tensor must be contiguous"
     assert weight.ndim == 2, f"Weight tensor must be 2D, got {weight.ndim}D"
-    assert weight.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {weight.dtype}"
+    assert weight.dtype in (torch.bfloat16, torch.float16, torch.float32), (
+        f"Unsupported dtype {weight.dtype}"
+    )
 
     ori_x_shape = x.size()
     x = x.reshape(-1, ori_x_shape[-1])
 
     if bias is not None:
-        assert bias.shape[0] == weight.shape[0], f"Bias shape {bias.shape} does not match weight shape {weight.shape}"
+        assert bias.shape[0] == weight.shape[0], (
+            f"Bias shape {bias.shape} does not match weight shape {weight.shape}"
+        )
 
     M, K = x.shape
     N, K2 = weight.shape
@@ -195,7 +254,9 @@ def ot_qlinear_fn(
     else:
         output = torch.tile(bias, (M, 1)).to(x.dtype)
 
-    grid = lambda meta: (triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),)
+    grid = lambda meta: (
+        triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),
+    )
 
     _ot_qlinear_forward_kernel[grid](
         x,
@@ -226,7 +287,7 @@ def ot_qlinear_fn(
         SKIP_QUANTIZE=skip_quantize,
         USE_BIAS=bias is not None,
         BLOCK_SIZE_M=128,
-        BLOCK_SIZE_N=256,
+        BLOCK_SIZE_N=128,
         BLOCK_SIZE_K=64,
         GROUP_SIZE_M=8,
     )
@@ -286,7 +347,21 @@ def _ot_qlinear_backward(ctx, *grad_outputs):
     if bias is not None and ctx.needs_input_grad[2]:
         grad_bias = grad_outputs[0].sum(0)
 
-    return grad_x, grad_weight, grad_bias, None, None, None, None, None, None, None, None, None, None
+    return (
+        grad_x,
+        grad_weight,
+        grad_bias,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
 
 
 def _ot_qlinear_setup_context(ctx, inputs, output):

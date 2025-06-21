@@ -12,9 +12,8 @@
     license="Apache-2.0"
     keywords=["triton", "mase", "deep-learning"]
     dynamic=["version"]
-    dependencies=["numpy>=2.2.3", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
+    dependencies=["numpy", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
     urls.Repository="https://github.com/DeepWok/mase-triton.git"
-    # optional-dependencies.hf=["transformers==4.49.0", "datasets", "accelerate"]
 
 [dependency-groups]
     base=[
@@ -32,12 +31,10 @@
         { include-group="fix" },
         { include-group="utils" },
     ]
-    basic=["numpy>=2.2.3", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
+    basic=["numpy", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
     test=["pytest"]
-    # hf=["transformers==4.49.0", "datasets", "accelerate"]
-    lint=["black"]
+    lint=["ruff"]
     fix=["ipdb", "ipython"]
-    # release=["packaging>=24.2", "twine>=6.1.0"]
     build=["build>=1.2.2"]
     publish=["twine", "mkdocs-material"]
     utils=["tabulate", "tqdm"]

@@ -6,7 +6,7 @@ env_list=["py3.11", "dev"]
     package="wheel"
     # wheel_build_env = ".pkg"
     dependency_groups=["base"]
-    commands=[["pytest", { replace="posargs", extend=true }]]
+    commands=[["pytest test", { replace="posargs", extend=true }]]
 
 [env_pkg_base]
     description="Package the project into a wheel"
@@ -40,12 +40,3 @@ env_list=["py3.11", "dev"]
     skip_install=true
     dependency_groups=["base", "publish"]
     commands=[["python", "-m", "build", "--wheel"], ["twine", "upload", "--repository", "testpypi", "dist/*"]]
-
-
-[pytest]
-    testpaths=["test"]
-    python_files=["test_*.py"]
-    python_classes=["Test*"]
-    python_functions=["test_*"]
-    [pytest.markers]
-        slow="mark test as slow"
