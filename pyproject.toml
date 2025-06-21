@@ -32,7 +32,7 @@
         { include-group="fix" },
         { include-group="utils" },
     ]
-    basic=["numpy>=2.2.3", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
+    basic=["numpy", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
     test=["pytest"]
     # hf=["transformers==4.49.0", "datasets", "accelerate"]
     lint=["black"]

@@ -1,38 +1,94 @@
 import torch
-from torch import Tensor
 import triton
 import triton.language as tl
+from torch import Tensor
 
-from ....dtype import TORCH_DTYPE_TO_TRITON
 from ....about import PACKAGE_NAME
+from ....dtype import TORCH_DTYPE_TO_TRITON
 from .utils import _noisy_quantize
 
 
 def _get_autotune_configs_ot_qmatmul_kernel():
     return [
         triton.Config(
-            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 8}, num_stages=3, num_warps=8
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 256,
+                "BLOCK_SIZE_K": 64,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=3,
+            num_warps=8,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 64,
+                "BLOCK_SIZE_N": 256,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 128,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 64,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 64,
+                "BLOCK_SIZE_N": 128,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=4, num_warps=4
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 32,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=4,
+            num_warps=4,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=5, num_warps=2
+            {
+                "BLOCK_SIZE_M": 64,
+                "BLOCK_SIZE_N": 32,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=5,
+            num_warps=2,
         ),
         triton.Config(
-            {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8}, num_stages=5, num_warps=2
+            {
+                "BLOCK_SIZE_M": 32,
+                "BLOCK_SIZE_N": 64,
+                "BLOCK_SIZE_K": 32,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=5,
+            num_warps=2,
         ),
     ]
 
@@ -88,8 +144,16 @@ def _ot_qmatmul_forward_kernel(
     offs_n = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
 
-    a_ptrs = a_ptr + (offs_batch * stride_ab + offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak)
-    b_ptrs = b_ptr + (offs_batch * stride_bb + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn)
+    a_ptrs = a_ptr + (
+        offs_batch * stride_ab
+        + offs_m[:, None] * stride_am
+        + offs_k[None, :] * stride_ak
+    )
+    b_ptrs = b_ptr + (
+        offs_batch * stride_bb
+        + offs_k[:, None] * stride_bk
+        + offs_n[None, :] * stride_bn
+    )
 
     acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
@@ -140,7 +204,11 @@ def _ot_qmatmul_forward_kernel(
             ENABLE_LUT_MIN=False,
         )
 
-    c_ptrs = c_ptr + (offs_batch * stride_cb + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn)
+    c_ptrs = c_ptr + (
+        offs_batch * stride_cb
+        + offs_m[:, None] * stride_cm
+        + offs_n[None, :] * stride_cn
+    )
     c_mask = (offs_batch < B) & (offs_m[:, None] < M) & (offs_n[None, :] < N)
     tl.store(c_ptrs, c, mask=c_mask)
 
@@ -163,7 +231,6 @@ def ot_qmatmul_fn(
     q_seed: int,
     skip_quantize: bool = False,
 ) -> tuple[Tensor, int]:
-
     assert a.is_contiguous(), "a must be contiguous"
     assert b.is_contiguous(), "b must be contiguous"
     assert a.ndim >= 2, "a must have at least 2 dimensions"
@@ -182,7 +249,10 @@ def ot_qmatmul_fn(
 
     output = torch.empty((B, M, N), dtype=a.dtype, device=a.device)
 
-    grid = lambda meta: (triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]), B)
+    grid = lambda meta: (
+        triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),
+        B,
+    )
 
     _ot_qmatmul_forward_kernel[grid](
         a,
@@ -214,7 +284,7 @@ def ot_qmatmul_fn(
         ENABLE_LUT_MIN=b_lut_min is not None,
         SKIP_QUANTIZE=skip_quantize,
         BLOCK_SIZE_M=128,
-        BLOCK_SIZE_N=256,
+        BLOCK_SIZE_N=128,
         BLOCK_SIZE_K=64,
         GROUP_SIZE_M=8,
     )
@@ -238,7 +308,6 @@ def _ot_qmatmul_fn_fake(
     q_seed: int,
     skip_quantize: bool = False,
 ) -> tuple[Tensor, int]:
-
     output = torch.empty((*a.shape[:-2], b.shape[-1]), device=a.device, dtype=a.dtype)
     return output, q_seed
 
