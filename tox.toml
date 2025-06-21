@@ -6,7 +6,7 @@ env_list=["py3.11", "dev"]
     package="wheel"
     # wheel_build_env = ".pkg"
     dependency_groups=["base"]
-    commands=[["pytest", { replace="posargs", extend=true }]]
+    commands=[["pytest test", { replace="posargs", extend=true }]]
 
 [env_pkg_base]
     description="Package the project into a wheel"

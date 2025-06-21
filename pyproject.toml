@@ -33,7 +33,7 @@
     ]
     basic=["numpy", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
     test=["pytest"]
-    lint=["black"]
+    lint=["ruff"]
     fix=["ipdb", "ipython"]
     build=["build>=1.2.2"]
     publish=["twine", "mkdocs-material"]
