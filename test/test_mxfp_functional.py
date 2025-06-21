@@ -7,6 +7,7 @@ from mase_triton.mxfp.functional import (
     flatten_for_quantize,
     mxfp_matmul,
     permute_for_dequantize,
+    quantize_dequantize,
 )
 from mase_triton.mxfp.meta import (
     OCP_MXFP4_E2M1,
@@ -50,6 +51,42 @@ def test_quantize_dequantize_1d(mxfp_format: MXFPMeta, n_groups: int):
     w_dq = compose_mxfp_tensor(
         scales=scales, elements=elements, tensor_meta=tensor_meta
     )
+    assert w_dq.shape == w.shape, (
+        f"Dequantized tensor shape {w_dq.shape} does not match original shape {w.shape}."
+    )
+    avg_err = (w - w_dq).abs().mean()
+    avg_err_ratio = avg_err / w.abs().mean()
+    if mxfp_format is OCP_MXFP8_E4M3:
+        assert avg_err_ratio < 0.05, (
+            f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
+        )
+    elif mxfp_format is OCP_MXFP8_E5M2:
+        assert avg_err_ratio < 0.1, (
+            f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
+        )
+    elif mxfp_format is OCP_MXFP6_E3M2:
+        assert avg_err_ratio < 0.2, (
+            f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
+        )
+    elif mxfp_format is OCP_MXFP6_E2M3:
+        assert avg_err_ratio < 0.5, (
+            f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
+        )
+    else:
+        assert avg_err_ratio < 0.7, (
+            f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
+        )
+
+
+@pytest.mark.parametrize(
+    "mxfp_format",
+    [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
+)
+@pytest.mark.parametrize("n_groups", [16])
+def test_quantize_dequantize_1d_wrapped(mxfp_format: MXFPMeta, n_groups: int):
+    n_elements = mxfp_format.block_size * n_groups
+    w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0
+    w_dq = quantize_dequantize(w, block_dim=0, mxfp_meta=mxfp_format)
     assert w_dq.shape == w.shape, (
         f"Dequantized tensor shape {w_dq.shape} does not match original shape {w.shape}."
     )

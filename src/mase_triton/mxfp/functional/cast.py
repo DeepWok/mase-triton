@@ -100,111 +100,28 @@ def compose_mxfp_tensor(
     return tensor
 
 
-def mxfp_linear_XWqB(
-    x: Tensor,
-    w_scales: Tensor,
-    w_elements: Tensor,
-    w_tensor_meta: MXFPTensorMeta,
-    b: Tensor | None,
-    backend: Literal["separate", "fused"],
-):
-    if backend == "separate":
-        w_dq = compose_mxfp_tensor(w_scales, w_elements, w_tensor_meta)
-        out = torch.nn.functional.linear(x, w_dq, b)
-    else:
-        raise NotImplementedError("'fused' not implemented")
-    return out
-
-
-def parse_mxfp_linear_type(
-    x: Tensor,
-    x_meta: MXFPMeta | None,
-    x_scales: Tensor | None,
-    x_elements: Tensor | None,
-    x_tensor_meta: Tensor | None,
-    w: Tensor,
-    w_meta: MXFPMeta | None,
-    w_scales: Tensor | None,
-    w_elements: Tensor | None,
-    w_tensor_meta: MXFPTensorMeta | None,
-    b: Tensor | None,
-    b_meta: MXFPMeta | None,
-    b_scales: Tensor | None,
-    b_elements: Tensor | None,
-    b_tensor_meta: MXFPTensorMeta | None,
-) -> str:
-    pattern = ""
-
-    check_list = [
-        ["X", x, x_meta, x_scales, x_elements, x_tensor_meta],
-        ["W", w, w_meta, w_scales, w_elements, w_tensor_meta],
-        ["B", b, b_meta, b_scales, b_elements, b_tensor_meta],
-    ]
-    for target, t, t_meta, t_scales, t_elements, t_tensor_meta in check_list:
-        if (
-            t_meta is None
-            and t_scales is None
-            and t_elements is None
-            and t_tensor_meta is None
-        ):
-            pattern += target
-            assert t is not None
-        else:
-            pattern += f"{target}q"
-            assert (w_meta is not None) != (
-                w_scales is not None
-                and w_elements is not None
-                and w_tensor_meta is not None
-            ), "One and only one setupsmust be avaialbel"
-    return pattern
-
-
-def mxfp_linear(
-    x: Tensor,
-    x_meta: MXFPMeta | None,
-    x_scales: Tensor | None,
-    x_elements: Tensor | None,
-    x_tensor_meta: Tensor | None,
-    w: Tensor,
-    w_meta: MXFPMeta | None,
-    w_scales: Tensor | None,
-    w_elements: Tensor | None,
-    w_tensor_meta: MXFPTensorMeta | None,
-    b: Tensor | None,
-    b_meta: MXFPMeta | None,
-    b_scales: Tensor | None,
-    b_elements: Tensor | None,
-    b_tensor_meta: MXFPTensorMeta | None,
-    backend: Literal["separate", "fused"],
+def quantize_dequantize(
+    tensor: Tensor,
+    block_dim: int,
+    mxfp_meta: MXFPMeta,
+    dtype: torch.dtype | None = None,
 ) -> Tensor:
-    linear_type = parse_mxfp_linear_type(
-        x=x,
-        x_meta=x_meta,
-        x_scales=x_scales,
-        x_elements=x_elements,
-        x_tensor_meta=x_tensor_meta,
-        w=w,
-        w_meta=w_meta,
-        w_scales=w_scales,
-        w_elements=w_elements,
-        w_tensor_meta=w_tensor_meta,
-        b=b,
-        b_meta=b_meta,
-        b_scales=b_scales,
-        b_elements=b_elements,
-        b_tensor_meta=b_tensor_meta,
-    )
-    match linear_type:
-        case "XWqB":
-            out = mxfp_linear_XWqB(
-                x=x,
-                w_scales=w_scales,
-                w_elements=w_elements,
-                w_tensor_meta=w_tensor_meta,
-                b=b,
-                backend=backend,
-            )
-        case _:
-            raise NotImplementedError
+    """
+    Quantizes and dequantizes a tensor using the MXFP format.
 
-    return out
+    :param tensor: The input tensor to be quantized.
+    :type tensor: torch.Tensor
+    :param block_dim: The dimension to group the tensor elements into blocks.
+    :type block_dim: int
+    :param mxfp_meta: The metadata for the MXFP format.
+    :type mxfp_meta: MXFPMeta
+    :param dtype: The desired data type of the output tensor, by default None, which uses the dtype from mxfp_meta.
+
+    :returns: The dequantized tensor.
+    :rtype: torch.Tensor
+    """
+    scales, elements, tensor_meta = extract_mxfp_components(
+        tensor, block_dim, mxfp_meta
+    )
+    tensor_dq = compose_mxfp_tensor(scales, elements, tensor_meta, dtype=dtype)
+    return tensor_dq
