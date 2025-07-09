@@ -1,6 +1,6 @@
 [build-system]
     build-backend="hatchling.build"
-    requires=["hatch-vcs>=0.4", "hatchling>=1.27"]
+    requires=["hatchling>=1.27", "versioningit"]
 
 [project]
     name="mase-triton"
@@ -40,6 +40,24 @@
     utils=["tabulate", "tqdm"]
 
 [tool.hatch]
-    version.path="src/mase_triton/about.py"
     build.dev-mode-dirs=["src"]
     build.targets.sdist.include=["/src", "/test", "/tox.toml"]
+
+    [tool.hatch.version]
+        source="versioningit"
+
+[tool.versioningit.write]
+    file="src/mase_triton/VERSION"
+
+[tool.versioningit.format]
+    # Format used when there have been commits since the most recent tag:
+    distance="{base_version}.post{distance}+{vcs}{rev}"
+    # Example formatted version: 1.2.3.post42+ge174a1f
+
+    # Format used when there are uncommitted changes:
+    dirty="{base_version}+d{build_date:%Y%m%d}"
+    # Example formatted version: 1.2.3+d20230922
+
+    # Format used when there are both commits and uncommitted changes:
+    distance-dirty="{base_version}.post{distance}+{vcs}{rev}.d{build_date:%Y%m%d}"
+    # Example formatted version: 1.2.3.post42+ge174a1f.d20230922
