@@ -249,45 +249,47 @@ def ot_qmatmul_fn(
 
     output = torch.empty((B, M, N), dtype=a.dtype, device=a.device)
 
-    grid = lambda meta: (
-        triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),
-        B,
-    )
+    def grid(meta):
+        return (
+            triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),
+            B,
+        )
 
-    _ot_qmatmul_forward_kernel[grid](
-        a,
-        b,
-        output,
-        B=B,
-        M=M,
-        N=N,
-        K=K,
-        a_min=a_min,
-        a_max=a_max,
-        b_min=b_min,
-        b_max=b_max,
-        b_lut_min=b_lut_min,
-        c_min=o_min,
-        c_max=o_max,
-        quant_levels=q_levels,
-        seed=q_seed,
-        stride_ab=a.stride(0),
-        stride_am=a.stride(1),
-        stride_ak=a.stride(2),
-        stride_bb=b.stride(0),
-        stride_bk=b.stride(1),
-        stride_bn=b.stride(2),
-        stride_cb=output.stride(0),
-        stride_cm=output.stride(1),
-        stride_cn=output.stride(2),
-        INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[a.dtype],
-        ENABLE_LUT_MIN=b_lut_min is not None,
-        SKIP_QUANTIZE=skip_quantize,
-        BLOCK_SIZE_M=128,
-        BLOCK_SIZE_N=128,
-        BLOCK_SIZE_K=64,
-        GROUP_SIZE_M=8,
-    )
+    with torch.cuda.device(a.device.index):
+        _ot_qmatmul_forward_kernel[grid](
+            a,
+            b,
+            output,
+            B=B,
+            M=M,
+            N=N,
+            K=K,
+            a_min=a_min,
+            a_max=a_max,
+            b_min=b_min,
+            b_max=b_max,
+            b_lut_min=b_lut_min,
+            c_min=o_min,
+            c_max=o_max,
+            quant_levels=q_levels,
+            seed=q_seed,
+            stride_ab=a.stride(0),
+            stride_am=a.stride(1),
+            stride_ak=a.stride(2),
+            stride_bb=b.stride(0),
+            stride_bk=b.stride(1),
+            stride_bn=b.stride(2),
+            stride_cb=output.stride(0),
+            stride_cm=output.stride(1),
+            stride_cn=output.stride(2),
+            INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[a.dtype],
+            ENABLE_LUT_MIN=b_lut_min is not None,
+            SKIP_QUANTIZE=skip_quantize,
+            BLOCK_SIZE_M=128,
+            BLOCK_SIZE_N=128,
+            BLOCK_SIZE_K=64,
+            GROUP_SIZE_M=8,
+        )
     output = output.reshape(orig_a_shape[:-2] + (M, N))
     q_seed += 1 if not skip_quantize else q_seed
     return output, q_seed

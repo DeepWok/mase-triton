@@ -3,12 +3,12 @@ Optical Transformers: https://arxiv.org/abs/2302.10360
 """
 
 import torch
-from torch import Tensor
 import triton
 import triton.language as tl
+from torch import Tensor
 
-from ....dtype import TORCH_DTYPE_TO_TRITON
 from ....about import PACKAGE_NAME
+from ....dtype import TORCH_DTYPE_TO_TRITON
 
 
 def _get_autotune_configs_ot_quantize_forward_kernel():
@@ -91,7 +91,9 @@ def ot_quantize_fn(
     lut_min: float | None,
     quant_mode: str,
 ) -> tuple[Tensor, int]:
-    assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), f"Unsupported dtype {x.dtype}"
+    assert x.dtype in (torch.bfloat16, torch.float16, torch.float32), (
+        f"Unsupported dtype {x.dtype}"
+    )
     assert x.is_cuda, "Input tensor must be on CUDA device"
     assert quant_mode in ["det", "rand"], f"Unsupported quant_mode {quant_mode}"
     assert lut_min is None or lut_min >= 0.0, "lut_min must be non-negative"
@@ -102,22 +104,24 @@ def ot_quantize_fn(
     output = torch.empty_like(x)
     n_elements = x.numel()
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
-    _ot_quantize_forward_kernel[grid](
-        x,
-        output,
-        n_elements=n_elements,
-        quant_levels=quant_levels,
-        min_val=min_val,
-        max_val=max_val,
-        lut_min=lut_min,
-        seed=seed,
-        QUANT_MODE=quant_mode,
-        ENABLE_LUT_MIN=enable_lut_min,
-        INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
-        BLOCK_SIZE=1024,
-    )
+    with torch.cuda.device(x.device.index):
+        _ot_quantize_forward_kernel[grid](
+            x,
+            output,
+            n_elements=n_elements,
+            quant_levels=quant_levels,
+            min_val=min_val,
+            max_val=max_val,
+            lut_min=lut_min,
+            seed=seed,
+            QUANT_MODE=quant_mode,
+            ENABLE_LUT_MIN=enable_lut_min,
+            INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
+            BLOCK_SIZE=256,
+        )
 
     if quant_mode == "rand":
         seed += 1

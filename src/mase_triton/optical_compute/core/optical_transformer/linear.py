@@ -254,43 +254,45 @@ def ot_qlinear_fn(
     else:
         output = torch.tile(bias, (M, 1)).to(x.dtype)
 
-    grid = lambda meta: (
-        triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),
-    )
+    def grid(meta):
+        return (
+            triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),
+        )
 
-    _ot_qlinear_forward_kernel[grid](
-        x,
-        weight.T,
-        output,
-        bias if bias is not None else x,
-        M=M,
-        N=N,
-        K=K,
-        a_min=x_min,
-        a_max=x_max,
-        b_min=w_min,
-        b_max=w_max,
-        b_lut_min=w_lut_min or 0.0,
-        c_min=o_min,
-        c_max=o_max,
-        quant_levels=q_levels,
-        seed=q_seed,
-        stride_am=x.stride(0),
-        stride_ak=x.stride(1),
-        stride_bk=weight.T.stride(0),
-        stride_bn=weight.T.stride(1),
-        stride_cm=output.stride(0),
-        stride_cn=output.stride(1),
-        stride_d=bias.stride(0) if bias is not None else 0,
-        ENABLE_LUT_MIN=w_lut_min is not None,
-        INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
-        SKIP_QUANTIZE=skip_quantize,
-        USE_BIAS=bias is not None,
-        BLOCK_SIZE_M=128,
-        BLOCK_SIZE_N=128,
-        BLOCK_SIZE_K=64,
-        GROUP_SIZE_M=8,
-    )
+    with torch.cuda.device(x.device.index):
+        _ot_qlinear_forward_kernel[grid](
+            x,
+            weight.T,
+            output,
+            bias if bias is not None else x,
+            M=M,
+            N=N,
+            K=K,
+            a_min=x_min,
+            a_max=x_max,
+            b_min=w_min,
+            b_max=w_max,
+            b_lut_min=w_lut_min or 0.0,
+            c_min=o_min,
+            c_max=o_max,
+            quant_levels=q_levels,
+            seed=q_seed,
+            stride_am=x.stride(0),
+            stride_ak=x.stride(1),
+            stride_bk=weight.T.stride(0),
+            stride_bn=weight.T.stride(1),
+            stride_cm=output.stride(0),
+            stride_cn=output.stride(1),
+            stride_d=bias.stride(0) if bias is not None else 0,
+            ENABLE_LUT_MIN=w_lut_min is not None,
+            INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
+            SKIP_QUANTIZE=skip_quantize,
+            USE_BIAS=bias is not None,
+            BLOCK_SIZE_M=128,
+            BLOCK_SIZE_N=128,
+            BLOCK_SIZE_K=64,
+            GROUP_SIZE_M=8,
+        )
 
     output = output.reshape(ori_x_shape[:-1] + (N,))
     q_seed = q_seed + 1 if skip_quantize else q_seed
