@@ -1,11 +1,12 @@
 import math
 
 import torch
-from torch import Tensor
 import triton
 import triton.language as tl
-from ..dtype import TORCH_DTYPE_TO_TRITON
+from torch import Tensor
+
 from ..about import PACKAGE_NAME
+from ..dtype import TORCH_DTYPE_TO_TRITON
 
 
 def calculate_flip_probability(prob_halves: int | None) -> float | None:
@@ -36,14 +37,23 @@ def _get_four_randints(seed, offsets, BIN_DTYPE: tl.constexpr, N_ROUNDS: tl.cons
 
 @triton.jit
 def _cta_random_flip(
-    set_bits, offsets, prob_halves: int, seed: int, BIN_DTYPE: tl.constexpr, PHILOX_N_ROUNDS: tl.constexpr
+    set_bits,
+    offsets,
+    prob_halves: int,
+    seed: int,
+    BIN_DTYPE: tl.constexpr,
+    PHILOX_N_ROUNDS: tl.constexpr,
 ):
     q = prob_halves // 4
     r = prob_halves % 4
     for i in range(q):
-        rint1, rint2, rint3, rint4 = _get_four_randints(seed + i, offsets, BIN_DTYPE, PHILOX_N_ROUNDS)
+        rint1, rint2, rint3, rint4 = _get_four_randints(
+            seed + i, offsets, BIN_DTYPE, PHILOX_N_ROUNDS
+        )
         set_bits = set_bits & rint1 & rint2 & rint3 & rint4
-    rint1, rint2, rint3, _ = _get_four_randints(seed + q, offsets, BIN_DTYPE, PHILOX_N_ROUNDS)
+    rint1, rint2, rint3, _ = _get_four_randints(
+        seed + q, offsets, BIN_DTYPE, PHILOX_N_ROUNDS
+    )
     if r >= 1:
         set_bits = set_bits & rint1
     if r >= 2:
@@ -131,14 +141,23 @@ def _random_bitflip_forward_kernel(
     # random flip using mask: https://stackoverflow.com/a/35796081
     if not SKIP_EXP_FLIP:
         bits_to_flip = ~tl.zeros(x.shape, dtype=BIN_DTYPE)  # all bits set to 1
-        bits_to_flip = _cta_random_flip(bits_to_flip, offsets, exp_halves, seed_exp, BIN_DTYPE, EXP_PHILOX_N_ROUNDS)
+        bits_to_flip = _cta_random_flip(
+            bits_to_flip, offsets, exp_halves, seed_exp, BIN_DTYPE, EXP_PHILOX_N_ROUNDS
+        )
         exp_mask = _create_sign_exp_mask(INPUT_DTYPE)
         x = x ^ (bits_to_flip & exp_mask)
 
     # flip frac bits
     if not SKIP_FRAC_FLIP:
         bits_to_flip = ~tl.zeros(x.shape, dtype=BIN_DTYPE)  # all bits set to 1
-        bits_to_flip = _cta_random_flip(bits_to_flip, offsets, frac_halves, seed_frac, BIN_DTYPE, FRAC_PHILOX_N_ROUNDS)
+        bits_to_flip = _cta_random_flip(
+            bits_to_flip,
+            offsets,
+            frac_halves,
+            seed_frac,
+            BIN_DTYPE,
+            FRAC_PHILOX_N_ROUNDS,
+        )
         frac_mask = _create_frac_mask(INPUT_DTYPE)
         x = x ^ (bits_to_flip & frac_mask)
 
@@ -254,8 +273,12 @@ def random_bitflip_fn(
     """
     assert x.dtype in BIT_FLIP_DTYPE_MAP
     assert zero_out_threshold is None or zero_out_threshold >= 0.0
-    assert exp_halves is None or (exp_halves > 0 and exp_halves <= 24), "pseudo RNG works for 24 halves at most"
-    assert frac_halves is None or (frac_halves > 0 and frac_halves <= 24), "pseudo RNG works for 24 halves at most"
+    assert exp_halves is None or (exp_halves > 0 and exp_halves <= 24), (
+        "pseudo RNG works for 24 halves at most"
+    )
+    assert frac_halves is None or (frac_halves > 0 and frac_halves <= 24), (
+        "pseudo RNG works for 24 halves at most"
+    )
     skip_exp_flip = exp_halves is None
     skip_frac_flip = frac_halves is None
     enable_zero_out = zero_out_threshold is not None
@@ -269,24 +292,28 @@ def random_bitflip_fn(
         x = x.contiguous()
         output = torch.empty_like(x)
         num_elements = x.numel()
-        grid = lambda meta: (triton.cdiv(num_elements, meta["BLOCK_SIZE"]),)
-        _random_bitflip_forward_kernel[grid](
-            x,
-            output,
-            n_elements=num_elements,
-            exp_halves=exp_halves,
-            frac_halves=frac_halves,
-            seed_exp=seed_exp,
-            seed_frac=seed_frac,
-            zero_out_threshold=zero_out_threshold if enable_zero_out else 0.0,
-            SKIP_EXP_FLIP=skip_exp_flip,
-            SKIP_FRAC_FLIP=skip_frac_flip,
-            ENABLE_ZERO_OUT=enable_zero_out,
-            INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
-            BIN_DTYPE=BIT_FLIP_DTYPE_MAP[x.dtype],
-            EXP_PHILOX_N_ROUNDS=_get_philox_n_rounds(exp_halves),
-            FRAC_PHILOX_N_ROUNDS=_get_philox_n_rounds(frac_halves),
-        )
+
+        def grid(meta):
+            return (triton.cdiv(num_elements, meta["BLOCK_SIZE"]),)
+
+        with torch.cuda.device(x.device.index):
+            _random_bitflip_forward_kernel[grid](
+                x,
+                output,
+                n_elements=num_elements,
+                exp_halves=exp_halves,
+                frac_halves=frac_halves,
+                seed_exp=seed_exp,
+                seed_frac=seed_frac,
+                zero_out_threshold=zero_out_threshold if enable_zero_out else 0.0,
+                SKIP_EXP_FLIP=skip_exp_flip,
+                SKIP_FRAC_FLIP=skip_frac_flip,
+                ENABLE_ZERO_OUT=enable_zero_out,
+                INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
+                BIN_DTYPE=BIT_FLIP_DTYPE_MAP[x.dtype],
+                EXP_PHILOX_N_ROUNDS=_get_philox_n_rounds(exp_halves),
+                FRAC_PHILOX_N_ROUNDS=_get_philox_n_rounds(frac_halves),
+            )
         if not skip_exp_flip:
             seed_exp = seed_exp + math.ceil(exp_halves / 4)
         if not skip_frac_flip:
@@ -356,14 +383,23 @@ def _random_bitflip_zero_outed_backward_kernel(
     # random flip using mask: https://stackoverflow.com/a/35796081
     if not SKIP_EXP_FLIP:
         bits_to_flip = ~tl.zeros(x.shape, dtype=BIN_DTYPE)  # all bits set to 1
-        bits_to_flip = _cta_random_flip(bits_to_flip, offsets, exp_halves, seed_exp, BIN_DTYPE, EXP_PHILOX_N_ROUNDS)
+        bits_to_flip = _cta_random_flip(
+            bits_to_flip, offsets, exp_halves, seed_exp, BIN_DTYPE, EXP_PHILOX_N_ROUNDS
+        )
         exp_mask = _create_sign_exp_mask(INPUT_DTYPE)
         x = x ^ (bits_to_flip & exp_mask)
 
     # flip frac bits
     if not SKIP_FRAC_FLIP:
         bits_to_flip = ~tl.zeros(x.shape, dtype=BIN_DTYPE)  # all bits set to 1
-        bits_to_flip = _cta_random_flip(bits_to_flip, offsets, frac_halves, seed_frac, BIN_DTYPE, FRAC_PHILOX_N_ROUNDS)
+        bits_to_flip = _cta_random_flip(
+            bits_to_flip,
+            offsets,
+            frac_halves,
+            seed_frac,
+            BIN_DTYPE,
+            FRAC_PHILOX_N_ROUNDS,
+        )
         frac_mask = _create_frac_mask(INPUT_DTYPE)
         x = x ^ (bits_to_flip & frac_mask)
 
@@ -407,25 +443,29 @@ def _random_bitflip_backward(
             grad_y = grad_y.contiguous()
             grad_x = torch.empty_like(x)
             num_elements = x.numel()
-            grid = lambda meta: (triton.cdiv(num_elements, meta["BLOCK_SIZE"]),)
-            _random_bitflip_zero_outed_backward_kernel[grid](
-                x,
-                grad_y,
-                grad_x,
-                n_elements=num_elements,
-                exp_halves=exp_halves,
-                frac_halves=frac_halves,
-                seed_exp=seed_exp,
-                seed_frac=seed_frac,
-                zero_out_threshold=zero_out_threshold,
-                SKIP_EXP_FLIP=skip_exp_flip,
-                SKIP_FRAC_FLIP=skip_frac_flip,
-                INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
-                BIN_DTYPE=BIT_FLIP_DTYPE_MAP[x.dtype],
-                GRAD_DTYPE=TORCH_DTYPE_TO_TRITON[grad_y.dtype],
-                EXP_PHILOX_N_ROUNDS=_get_philox_n_rounds(exp_halves),
-                FRAC_PHILOX_N_ROUNDS=_get_philox_n_rounds(frac_halves),
-            )
+
+            def grid(meta):
+                return (triton.cdiv(num_elements, meta["BLOCK_SIZE"]),)
+
+            with torch.cuda.device(x.device.index):
+                _random_bitflip_zero_outed_backward_kernel[grid](
+                    x,
+                    grad_y,
+                    grad_x,
+                    n_elements=num_elements,
+                    exp_halves=exp_halves,
+                    frac_halves=frac_halves,
+                    seed_exp=seed_exp,
+                    seed_frac=seed_frac,
+                    zero_out_threshold=zero_out_threshold,
+                    SKIP_EXP_FLIP=skip_exp_flip,
+                    SKIP_FRAC_FLIP=skip_frac_flip,
+                    INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
+                    BIN_DTYPE=BIT_FLIP_DTYPE_MAP[x.dtype],
+                    GRAD_DTYPE=TORCH_DTYPE_TO_TRITON[grad_y.dtype],
+                    EXP_PHILOX_N_ROUNDS=_get_philox_n_rounds(exp_halves),
+                    FRAC_PHILOX_N_ROUNDS=_get_philox_n_rounds(frac_halves),
+                )
         else:
             grad_x = grad_y.clone()
         return grad_x
@@ -474,7 +514,9 @@ def _random_bitflip_setup_context(ctx, inputs, output):
     ctx.zero_out_threshold = inputs[5]
 
 
-random_bitflip_fn.register_autograd(_random_bitflip_backward_wrapper, setup_context=_random_bitflip_setup_context)
+random_bitflip_fn.register_autograd(
+    _random_bitflip_backward_wrapper, setup_context=_random_bitflip_setup_context
+)
 
 
 @random_bitflip_fn.register_kernel("cpu")
@@ -501,7 +543,9 @@ def _random_bitflip_backward_cpu(
     zero_out_threshold: float | None,
 ) -> Tensor:
     # TODO: implement the CPU version of random bit flip backward using numpy
-    raise NotImplementedError("CPU version of random bit flip backward is not implemented yet.")
+    raise NotImplementedError(
+        "CPU version of random bit flip backward is not implemented yet."
+    )
 
 
 class RandomBitFlipFunctions:
