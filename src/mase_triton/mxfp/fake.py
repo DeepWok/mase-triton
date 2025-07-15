@@ -27,6 +27,7 @@ def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Ten
     el_frac_bits = mxfp_meta.element_frac_bits
     el_frac_max = (2 << el_frac_bits) - 1
     el_implicit_bit = 1 << el_frac_bits
+    el_sign_mask = 1 << (el_exp_bits + el_frac_bits)
     x_exp_frac_mask = 0x7FFF
 
     x = x.flatten()
@@ -54,7 +55,7 @@ def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Ten
 
     sign = x.view(torch.int16) & 0x8000
     sign = sign >> (15 - (el_exp_bits + el_frac_bits))
-    sign = sign & 2 ** (el_exp_bits + el_frac_bits)
+    sign = sign & el_sign_mask
 
     el = sign | (el_exp << el_frac_bits) | el_frac
     el = el.view(torch.uint16).to(torch.uint8)
@@ -93,8 +94,8 @@ def compose_mxfp_tensor(
     exp_max = scales.to(torch.uint16).view(torch.int16)
     exp_max = exp_max.expand(-1, B)  # [n_blocks, B]
 
-    zero_mask = (elements & el_exp_frac_mask) == 0
     elements = elements.to(torch.int16)
+    zero_mask = (elements & el_exp_frac_mask) == 0
     sign = elements << (15 - (el_exp_bits + el_frac_bits))
     sign = sign & 0x8000
 

@@ -23,11 +23,11 @@ _DEBUG_MXFP8_E4M3 = MXFPMeta(
 )
 
 
+@pytest.mark.parametrize("n_groups", [16])
 @pytest.mark.parametrize(
     "mxfp_format",
     [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
-@pytest.mark.parametrize("n_groups", [16])
 def test_extract_mxfp_components_normal(mxfp_format: MXFPMeta, n_groups: int):
     n_elements = mxfp_format.block_size * n_groups
     w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0
@@ -45,11 +45,11 @@ def test_extract_mxfp_components_normal(mxfp_format: MXFPMeta, n_groups: int):
     assert torch.all(elements == elements_ref)
 
 
+@pytest.mark.parametrize("n_groups", [16])
 @pytest.mark.parametrize(
     "mxfp_format",
     [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
-@pytest.mark.parametrize("n_groups", [16])
 def test_extract_mxfp_components_outliers(mxfp_format: MXFPMeta, n_groups: int):
     n_elements = mxfp_format.block_size * n_groups
     w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0
@@ -67,11 +67,11 @@ def test_extract_mxfp_components_outliers(mxfp_format: MXFPMeta, n_groups: int):
     assert torch.all(elements == elements_ref)
 
 
+@pytest.mark.parametrize("n_groups", [16])
 @pytest.mark.parametrize(
     "mxfp_format",
     [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
-@pytest.mark.parametrize("n_groups", [16])
 def test_extract_mxfp_components_subnormal(mxfp_format: MXFPMeta, n_groups: int):
     n_elements = mxfp_format.block_size * n_groups
     w = (
@@ -93,11 +93,11 @@ def test_extract_mxfp_components_subnormal(mxfp_format: MXFPMeta, n_groups: int)
     assert torch.all(elements == elements_ref)
 
 
+@pytest.mark.parametrize("n_groups", [16])
 @pytest.mark.parametrize(
     "mxfp_format",
     [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
-@pytest.mark.parametrize("n_groups", [16])
 def test_compose_mxfp_tensor(mxfp_format: MXFPMeta, n_groups: int):
     n_elements = mxfp_format.block_size * n_groups
     w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0

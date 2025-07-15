@@ -30,11 +30,12 @@ def _extract_mxfp_components_kernel(
     BLK: tl.constexpr,
 ):
     # helper constants
-    sc_exp_max = 2**sc_exp_bits - 1
-    el_exp_max = 2**el_exp_bits - 1
-    el_exp_bias = 2 ** (el_exp_bits - 1) - 1
-    el_man_max = 2**el_man_bits - 1
-    el_sign_mask = 2 ** (el_exp_bits + el_man_bits)
+    sc_exp_max = (1 << sc_exp_bits) - 1
+    el_exp_max = (1 << el_exp_bits) - 1
+    el_exp_bias = (1 << (el_exp_bits - 1)) - 1
+    el_man_max = (1 << el_man_bits) - 1
+    el_sign_mask = 1 << (el_exp_bits + el_man_bits)
+    el_implicit_bit = 1 << el_man_bits
 
     pid = tl.program_id(axis=0)
     x_offs = pid * BLK + tl.arange(0, BLK)
@@ -48,27 +49,32 @@ def _extract_mxfp_components_kernel(
     x = x.cast(tl.int16, bitcast=True)
     block_max = block_max.cast(tl.int16, bitcast=True)
     exp_max = (block_max & 0x7F80) >> 7  # 0-255
-    flush_to_zero_mask = exp_max == 0
+    # flush_to_zero_mask = exp_max == 0
+    zero_mask = (x & 0x7FFF) == 0
     el_exp = (x & 0x7F80) >> 7  # 0-255
     el_exp = (el_exp - exp_max).to(tl.int16)
     el_exp = (el_exp + el_exp_bias).to(tl.int16)
-    underflow_mask = el_exp < 0
+    subnormal_mask = (el_exp == 0) & (~zero_mask)
+    underflow_mask = (el_exp < 0) | zero_mask
     overflow_mask = el_exp > el_exp_max
-    el_exp = tl.where(underflow_mask, 0, el_exp)
     el_exp = tl.where(underflow_mask, 0, el_exp)
     el_exp = tl.where(overflow_mask, el_exp_max, el_exp)
 
     el_mantissa = x & 0x007F
     el_mantissa = el_mantissa >> (7 - el_man_bits)
+    el_mantissa = tl.where(
+        subnormal_mask, (el_implicit_bit | el_mantissa) >> 1, el_mantissa
+    )
     el_mantissa = tl.where(underflow_mask, 0, el_mantissa)
     el_mantissa = tl.where(overflow_mask, el_man_max, el_mantissa)
+
     sign = x & -32768  # 0x8000
     sign = sign >> (15 - (el_exp_bits + el_man_bits))
     sign = sign & el_sign_mask
 
     el = sign | (el_exp << el_man_bits) | el_mantissa
-    el = tl.where(flush_to_zero_mask, 0, el)
     el = el.cast(tl.uint8)
+
     el_ptrs = element_ptr + x_offs
     tl.store(el_ptrs, el, mask=x_offs < n_elements)
 
@@ -132,10 +138,11 @@ def _compose_mxfp_tensor_kernel(
 ):
     # helper constants
     el_exp_man_bits = el_exp_bits + el_man_bits
-    el_exp_bias = 2 ** (el_exp_bits - 1) - 1
-    el_exp_man_mask = 2 ** (el_exp_bits + el_man_bits) - 1
-    el_man_mask = 2**el_man_bits - 1
-    el_exp_mask = 2**el_exp_bits - 1
+    el_exp_bias = (1 << (el_exp_bits - 1)) - 1
+    el_exp_man_mask = (1 << (el_exp_bits + el_man_bits)) - 1
+    el_man_mask = (1 << el_man_bits) - 1
+    el_exp_mask = (1 << el_exp_bits) - 1
+    el_exp_frac_mask = (1 << (el_exp_bits + el_man_bits)) - 1
 
     pid = tl.program_id(axis=0)
 
@@ -150,12 +157,16 @@ def _compose_mxfp_tensor_kernel(
     underflow_mask = (el & el_exp_man_mask) == 0
     exp_max = sc.to(tl.uint16).cast(tl.int16, bitcast=True)
     el = el.to(tl.uint16).cast(tl.int16, bitcast=True)
+    zero_mask = (el & el_exp_frac_mask) == 0
     el_sign = (el << (15 - el_exp_man_bits)).cast(tl.int16)
     el_sign = el_sign & -32768  # 0x8000
-    el_man = (el & el_man_mask).cast(tl.int16)
-    el_man = el_man << (7 - el_man_bits)
 
     el_exp = ((el >> el_man_bits) & el_exp_mask).cast(tl.int16)
+    subnormal_mask = (el_exp == 0) & (~zero_mask)
+    el_man = tl.where(subnormal_mask, el << 1, el)
+    el_man = (el_man & el_man_mask).cast(tl.int16)
+    el_man = el_man << (7 - el_man_bits)
+
     el_exp = (el_exp - el_exp_bias).to(tl.int16)
     el_exp = (el_exp + exp_max).to(tl.int16)
     el_exp = el_exp << 7

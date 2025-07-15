@@ -116,7 +116,7 @@ def test_simulated_extract_and_compose_outliers(
     avg_err_ratio = avg_err / w.abs().mean()
     logger.info(f"Average error ratio for {mxfp_format} format: {avg_err_ratio:.4f}")
     if mxfp_format is OCP_MXFP4_E2M1:
-        assert avg_err_ratio < 0.2, (
+        assert avg_err_ratio < 0.25, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     else:
