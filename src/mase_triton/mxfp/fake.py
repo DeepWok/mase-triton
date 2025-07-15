@@ -24,9 +24,9 @@ def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Ten
     el_exp_bits = mxfp_meta.element_exp_bits
     el_exp_max = (2 << el_exp_bits) - 1
     el_exp_bias = (1 << (el_exp_bits - 1)) - 1
-    el_man_bits = mxfp_meta.element_frac_bits
-    el_man_max = (2 << el_man_bits) - 1
-    el_implicit_bit = 1 << el_man_bits
+    el_frac_bits = mxfp_meta.element_frac_bits
+    el_frac_max = (2 << el_frac_bits) - 1
+    el_implicit_bit = 1 << el_frac_bits
     x_exp_frac_mask = 0x7FFF
 
     x = x.flatten()
@@ -45,20 +45,18 @@ def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Ten
     el_exp = torch.where(underflow_mask, 0, el_exp)
     el_exp = torch.where(overflow_mask, el_exp_max, el_exp)
 
-    el_mantissa = x.view(torch.int16) & 0x007F
-    el_mantissa = el_mantissa >> (7 - el_man_bits)
+    el_frac = x.view(torch.int16) & 0x007F
+    el_frac = el_frac >> (7 - el_frac_bits)
     # add implicit bit for subnormal minifloat
-    el_mantissa = torch.where(
-        subnormal_mask, (el_implicit_bit | el_mantissa) >> 1, el_mantissa
-    )
-    el_mantissa = torch.where(underflow_mask, 0, el_mantissa)
-    el_mantissa = torch.where(overflow_mask, el_man_max, el_mantissa)
+    el_frac = torch.where(subnormal_mask, (el_implicit_bit | el_frac) >> 1, el_frac)
+    el_frac = torch.where(underflow_mask, 0, el_frac)
+    el_frac = torch.where(overflow_mask, el_frac_max, el_frac)
 
     sign = x.view(torch.int16) & 0x8000
-    sign = sign >> (15 - (el_exp_bits + el_man_bits))
-    sign = sign & 2 ** (el_exp_bits + el_man_bits)
+    sign = sign >> (15 - (el_exp_bits + el_frac_bits))
+    sign = sign & 2 ** (el_exp_bits + el_frac_bits)
 
-    el = sign | (el_exp << el_man_bits) | el_mantissa
+    el = sign | (el_exp << el_frac_bits) | el_frac
     el = el.view(torch.uint16).to(torch.uint8)
 
     exp_max = exp_max.clamp(0, sc_exp_max).view(torch.uint16).to(torch.uint8)
@@ -103,14 +101,14 @@ def compose_mxfp_tensor(
     el_exp = (elements >> el_frac_bits) & ((1 << el_exp_bits) - 1)
     # remove implicit bit
     subnormal_mask = (el_exp == 0) & (~zero_mask)
-    mantissa = torch.where(subnormal_mask, elements << 1, elements)
-    mantissa = mantissa & el_frac_mask
-    mantissa = mantissa << (7 - el_frac_bits)
+    fraction = torch.where(subnormal_mask, elements << 1, elements)
+    fraction = fraction & el_frac_mask
+    fraction = fraction << (7 - el_frac_bits)
     el_exp = el_exp - el_exp_bias
     exp = exp_max + el_exp
     exp = exp << 7
 
-    dequantized = sign | exp | mantissa
+    dequantized = sign | exp | fraction
     dequantized = dequantized.view(torch.bfloat16)
     dequantized = torch.where(zero_mask, 0.0, dequantized)
     dequantized = dequantized.reshape(n_blocks * B)
