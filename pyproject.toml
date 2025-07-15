@@ -22,12 +22,14 @@
         { include-group="lint" },
         { include-group="debug" },
         { include-group="beautify" },
+        { include-group="publish" },
     ]
     core=["numpy", "triton>=2.6.0", "torch>=2.6.0"]
     test=["pytest"]
     lint=["ruff"]
     debug=["ipdb", "ipython"]
     beautify=["tabulate", "tqdm", "colorlog>=6.9.0"]
+    publish=["versioningit"]
 
 [tool.hatch]
     build.dev-mode-dirs=["src"]
