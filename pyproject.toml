@@ -28,8 +28,8 @@
         { include-group="test" },
         { include-group="lint" },
         { include-group="build" },
-        { include-group="fix" },
         { include-group="utils" },
+        { include-group="fix" },
     ]
     basic=["numpy", "triton>=2.6.0", "colorlog>=6.9.0", "torch>=2.6.0"]
     test=["pytest"]

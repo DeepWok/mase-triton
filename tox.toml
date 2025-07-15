@@ -1,10 +1,9 @@
 requires=["tox>=4.24.1"]
-env_list=["py3.11", "dev"]
+env_list=["py3.13", "dev"]
 
 [env_run_base]
     description="Run the tests with pytest under {env_name}"
     package="wheel"
-    # wheel_build_env = ".pkg"
     dependency_groups=["base"]
     commands=[["pytest test", { replace="posargs", extend=true }]]
 
@@ -18,7 +17,7 @@ env_list=["py3.11", "dev"]
     description="Development environment"
     package="editable"
     dependency_groups=["dev"]
-    commands=[]
+    commands=[["python", "-m", "pip", "install", "-e", "."]]
 
 [env.build]
     description="Package the project into a wheel"
@@ -26,17 +25,3 @@ env_list=["py3.11", "dev"]
     skip_install=true
     dependency_groups=["base"]
     commands=[["python", "-m", "build", "--wheel"]]
-
-[env.publish2test]
-    description="Package the project into a wheel, then publish to test PyPI"
-    package="wheel"
-    skip_install=true
-    dependency_groups=["base", "publish"]
-    commands=[["python", "-m", "build", "--wheel"], ["twine", "upload", "--repository", "testpypi", "dist/*"]]
-
-[env.publish]
-    description="Package the project into a wheel, then publish to PyPI"
-    package="wheel"
-    skip_install=true
-    dependency_groups=["base", "publish"]
-    commands=[["python", "-m", "build", "--wheel"], ["twine", "upload", "--repository", "testpypi", "dist/*"]]
