@@ -7,6 +7,7 @@ class MXFPMeta:
     scale_exp_bits: int
     element_exp_bits: int
     element_frac_bits: int
+    tag: str = ""
 
     def __post_init__(self):
         legal_scale_exp_bits = (8,)
@@ -38,28 +39,33 @@ OCP_MXFP8_E4M3 = MXFPMeta(
     scale_exp_bits=8,
     element_exp_bits=4,
     element_frac_bits=3,
+    tag="OCP_MXFP8_E4M3",
 )
 OCP_MXFP8_E5M2 = MXFPMeta(
     block_size=32,
     scale_exp_bits=8,
     element_exp_bits=5,
     element_frac_bits=2,
+    tag="OCP_MXFP8_E5M2",
 )
 OCP_MXFP6_E2M3 = MXFPMeta(
     block_size=32,
     scale_exp_bits=8,
     element_exp_bits=2,
     element_frac_bits=3,
+    tag="OCP_MXFP6_E2M3",
 )
 OCP_MXFP6_E3M2 = MXFPMeta(
     block_size=32,
     scale_exp_bits=8,
     element_exp_bits=3,
     element_frac_bits=2,
+    tag="OCP_MXFP6_E3M2",
 )
 OCP_MXFP4_E2M1 = MXFPMeta(
     block_size=32,
     scale_exp_bits=8,
     element_exp_bits=2,
     element_frac_bits=1,
+    tag="OCP_MXFP4_E2M1",
 )

@@ -109,7 +109,7 @@ def test_compose_mxfp_tensor(mxfp_format: MXFPMeta, n_groups: int):
         mxfp_meta=mxfp_format,
     )
     w_dq_ref = mxfp_fake.compose_mxfp_tensor(
-        shared_scales=scales,
+        scales=scales,
         elements=elements,
         mxfp_meta=mxfp_format,
     )

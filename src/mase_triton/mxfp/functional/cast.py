@@ -83,7 +83,7 @@ def compose_mxfp_tensor(
 
     if device == "cpu":
         tensor = mxfp_fake.compose_mxfp_tensor(
-            shared_scales=scales,
+            scales=scales,
             elements=elements,
             mxfp_meta=tensor_meta.meta,
         )
