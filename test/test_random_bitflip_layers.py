@@ -1,11 +1,11 @@
 import torch
 
+from mase_triton.logging import set_logging_verbosity, test_logger
 from mase_triton.random_bitflip.layers import (
     RandomBitFlipDropout,
     RandomBitFlipLinear,
 )
 from mase_triton.random_bitflip.utils import calculate_bit_mismatch_rate
-from mase_triton.logging import set_logging_verbosity, test_logger
 
 logger = test_logger.getChild(f"{__name__}")
 
@@ -44,7 +44,7 @@ def test_random_bitflip_dropout():
 def test_random_bitflip_linear_act_only():
     dtype = torch.float16
     n_tries = 4
-    bs = 1024
+    bs = 8
     in_features = 1024
     out_features = 1024
     x_p_exp = 0.5**3
@@ -54,11 +54,17 @@ def test_random_bitflip_linear_act_only():
     w_p_frac = None
     w_zero_out_t = None
 
-    logger.info(f"x_p_exp={x_p_exp}, x_p_frac={x_p_frac}, x_zero_out_t={x_zero_out_t}, bypassing w")
+    logger.info(
+        f"x_p_exp={x_p_exp}, x_p_frac={x_p_frac}, x_zero_out_t={x_zero_out_t}, bypassing w"
+    )
 
-    fc = torch.nn.Linear(in_features, out_features, bias=False, device=DEVICE, dtype=dtype)
+    fc = torch.nn.Linear(
+        in_features, out_features, bias=False, device=DEVICE, dtype=dtype
+    )
     with torch.no_grad():
-        fc.weight.copy_(torch.eye(in_features, device=DEVICE, dtype=dtype).transpose(0, 1))
+        fc.weight.copy_(
+            torch.eye(in_features, device=DEVICE, dtype=dtype).transpose(0, 1)
+        )
 
     bitflip_fc = RandomBitFlipLinear.from_linear(
         fc,

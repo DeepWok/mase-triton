@@ -31,6 +31,10 @@
     beautify=["tabulate", "tqdm", "colorlog>=6.9.0"]
     publish=["versioningit"]
 
+[tool.pytest.ini_options]
+    minversion="6.0"
+    testpaths=["test"]
+
 [tool.hatch]
     build.dev-mode-dirs=["src"]
     build.targets.sdist.include=["/src", "/test"]
