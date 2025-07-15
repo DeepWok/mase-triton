@@ -9,9 +9,6 @@ from mase_triton.utils.train_utils import set_seed
 set_seed(42)
 
 
-@pytest.mark.parametrize(
-    "layer_type", ["XWB", "XWBq", "XWqB", "XWqBq", "XqWB", "XqWBq", "XqWqB", "XqWqBq"]
-)
 @pytest.mark.parametrize("backend", ["separate"])
 @pytest.mark.parametrize("x_meta", [OCP_MXFP8_E4M3, None])
 @pytest.mark.parametrize("w_meta", [OCP_MXFP8_E4M3, None])
@@ -19,7 +16,6 @@ set_seed(42)
 @pytest.mark.parametrize("bias", [True, False])
 @pytest.mark.parametrize("dtype", [torch.bfloat16])
 def test_mxfp_linear_ptq(
-    layer_type: str,
     backend: str,
     x_meta: MXFPMeta,
     w_meta: MXFPMeta,
@@ -27,14 +23,19 @@ def test_mxfp_linear_ptq(
     bias: bool,
     dtype: torch.dtype,
 ):
-    if "Xq" in layer_type and x_meta is None:
-        pytest.skip("Xq layer type requires x_meta to be provided for quantization.")
-
-    if "Wq" in layer_type and w_meta is None:
-        pytest.skip("Wq layer type requires w_meta to be provided for quantization.")
-
-    if "Bq" in layer_type and b_meta is None:
-        pytest.skip("Bq layer type requires b_meta to be provided for quantization.")
+    layer_type = ""
+    if x_meta is None:
+        layer_type += "X"
+    else:
+        layer_type += "Xq"
+    if w_meta is None:
+        layer_type += "W"
+    else:
+        layer_type += "Wq"
+    if b_meta is None:
+        layer_type += "B"
+    else:
+        layer_type += "Bq"
 
     if not bias:
         b_meta = None
@@ -141,7 +142,6 @@ def test_mxfp_linear_to(
 
 if __name__ == "__main__":
     # test_mxfp_linear_ptq(
-    # layer_type="XWqB",
     # backend="separate",
     # x_meta=None,
     # w_meta=OCP_MXFP8_E4M3,

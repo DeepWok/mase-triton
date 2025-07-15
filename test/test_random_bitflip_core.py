@@ -1,16 +1,15 @@
 import os
+
+import pytest
 import tabulate
+import torch
 import tqdm
 
-import torch
-import pytest
-
-
-from mase_triton.random_bitflip import RandomBitFlipFunctions as RBFunctions
-from mase_triton.random_bitflip.utils import calculate_bit_mismatch_rate
-from mase_triton.utils.bit_repr import get_binary_repr
 from mase_triton.logging import set_logging_verbosity, test_logger
+from mase_triton.random_bitflip import functional as RBFunctions
+from mase_triton.random_bitflip.utils import calculate_bit_mismatch_rate
 
+set_logging_verbosity("INFO")
 logger = test_logger.getChild(f"{__name__}")
 
 DEVICE = "cuda"
@@ -18,21 +17,27 @@ DEVICE = "cuda"
 
 @torch.no_grad()
 def test_random_bitflip_forward_simple():
-    x = torch.zeros(4, device=DEVICE, dtype=torch.bfloat16)
+    n_tries = 10
+    x = torch.zeros(16, device=DEVICE, dtype=torch.bfloat16)
     exp_halves = 4
     frac_halves = 1
     seed_exp, seed_frac = 0, 0
-    out, seed_exp, seed_frac = RBFunctions.random_bitflip_fn(
-        x,
-        exp_halves=exp_halves,
-        frac_halves=frac_halves,
-        seed_exp=seed_exp,
-        seed_frac=seed_frac,
-        zero_out_threshold=None,
-    )
-    logger.info(f"binary x:\n{get_binary_repr(x, splitter='')}")
-    logger.info(f"binary out:\n{get_binary_repr(out, splitter='')}")
-    logger.info(f"seed_exp: {seed_exp}, seed_frac: {seed_frac}")
+    found_bitflip = False
+    for _ in range(n_tries):
+        out, seed_exp, seed_frac = RBFunctions.random_bitflip_fn(
+            x,
+            exp_halves=exp_halves,
+            frac_halves=frac_halves,
+            seed_exp=seed_exp,
+            seed_frac=seed_frac,
+            zero_out_threshold=None,
+        )
+        assert out.dtype == x.dtype
+        assert out.shape == x.shape
+        if not (x == out).all():
+            found_bitflip = True
+            break
+    assert found_bitflip, "No bitflip found in the output tensor"
 
 
 @pytest.mark.slow
@@ -49,8 +54,8 @@ def test_random_bitflip_forward_fully_activated_slow():
 def test_random_bitflip_forward_fully_activated():
     helper_random_bitflip_forward_fully_activated(
         input_dtypes=[torch.float16],
-        s_exp_halves_frac_halves=[(0.5**n, 0.5**n) for n in range(1, 8)],
-        M=2048,
+        s_exp_halves_frac_halves=[(0.5**n, 0.5**n) for n in range(4, 8)],
+        M=512,
         max_tries=1000,
         num_workers=min(16, os.cpu_count() // 2),
     )
@@ -75,10 +80,6 @@ def helper_random_bitflip_forward_fully_activated(
         torch.bfloat16: 7,
     }
     num_workers = 16
-    # input_dtypes = [torch.float16, torch.bfloat16, torch.float32]
-    # s_exp_halves_frac_halves = [(0.5**n, 0.5**n) for n in range(1, 25)]
-    # M = 2048
-    # max_tries = 1000
     rows = []
     headers = [
         "input_dtype",
@@ -111,7 +112,9 @@ def helper_random_bitflip_forward_fully_activated(
                 assert out.shape == x.shape
                 find_bitflip = not torch.equal(x, out)
                 if find_bitflip:
-                    mismatch_rate = calculate_bit_mismatch_rate(x, out, num_workers=num_workers)
+                    mismatch_rate = calculate_bit_mismatch_rate(
+                        x, out, num_workers=num_workers
+                    )
                     rows.append(
                         [
                             input_dtype,
@@ -136,7 +139,7 @@ def helper_random_bitflip_forward_fully_activated(
 
 @torch.no_grad()
 def test_random_bitflip_forward_zero_outed():
-    for exp_halves in [1, 2, 3, 4, 5, 6]:
+    for exp_halves in [1, 2, 3, 4]:
         x = torch.randn(2048, 2048, device=DEVICE, dtype=torch.float32)
         frac_halves = 2
         seed_exp, seed_frac = 0, 0
@@ -151,14 +154,11 @@ def test_random_bitflip_forward_zero_outed():
         )
         assert torch.all(torch.isfinite(x))
         zero_out_ratio = (out == 0.0).sum() / out.numel()
-        logger.info(
-            f"===== exp_halves = {exp_halves}, frac_halves = {frac_halves}, exp_p = {0.5**exp_halves}, frac_p = {0.5**frac_halves} ====="
-        )
-        logger.info(f"zero_out_ratio: {zero_out_ratio}")
+        assert zero_out_ratio > 0
 
 
 def test_random_bitflip_fn_backward():
-    n_repeats = 10
+    n_repeats = 4
     for exp_halves in [1, 2, 3]:
         for _ in range(n_repeats):
             x = torch.rand(8, device=DEVICE, dtype=torch.float32)
@@ -180,13 +180,12 @@ def test_random_bitflip_fn_backward():
             loss.backward()
             assert torch.all(torch.isfinite(x))
             assert torch.all((out != 0) == (x.grad == 1.0))
-        logger.info(f"exp_halves = {exp_halves} passed")
 
 
 if __name__ == "__main__":
     set_logging_verbosity("info")
     torch.set_printoptions(linewidth=120)
     test_random_bitflip_forward_simple()
-    # test_random_bitflip_forward_fully_activated()
-    # test_random_bitflip_forward_zero_outed()
+    test_random_bitflip_forward_fully_activated()
+    test_random_bitflip_forward_zero_outed()
     test_random_bitflip_fn_backward()

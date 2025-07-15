@@ -1,4 +1,4 @@
-/.tox/
+/.venv/
 /.vscode/
 /dist/
 /build/
@@ -6,3 +6,4 @@
 __pycache__/
 *.egg-info/
 .pytest_cache/
+src/mase_triton/VERSION
