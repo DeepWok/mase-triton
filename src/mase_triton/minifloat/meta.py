@@ -49,12 +49,12 @@ class MinifloatMeta:
         exp_bits (int): Number of exponent bits.
         frac_bits (int): Number of fraction bits.
         is_finite (bool): Whether the minifloat type is finite.
-        round_mode (Literal["rtz", "rte", "rtp", "rtn"]): Rounding mode.
-            - "rtz" -> round towards zero
-            - "rte" -> round towards even
-            - "rtp" -> round towards positive infinity
-            - "rtn" -> round towards negative infinity
-        The default is "rte".
+        round_mode (Literal["z", "n", "u", "d"]): Rounding mode.
+            - "z" -> round towards zero
+            - "n" -> round towards even
+            - "u" -> round towards positive infinity
+            - "d" -> round towards negative infinity
+        The default is "n".
 
     The sum of `exp_bits` and `frac_bits` must be less than 16 to fit in a 16-bit representation.
     """
@@ -62,7 +62,7 @@ class MinifloatMeta:
     exp_bits: int
     frac_bits: int
     is_finite: bool
-    round_mode: Literal["rtz", "rte", "rtp", "rtn"]
+    round_mode: Literal["z", "n", "u", "d"]
     tag: str = ""
 
     def __post_init__(self):
@@ -92,11 +92,11 @@ class MinifloatMeta:
 
 
 # fmt: off
-FP8_E4M3_fn = MinifloatMeta(exp_bits=4, frac_bits=3, is_finite=True, round_mode="rte", tag="FP8_E4M3_fn")
-FP8_E5M2_fn = MinifloatMeta(exp_bits=5, frac_bits=2, is_finite=True, round_mode="rte", tag="FP8_E5M2_fn")
-FP6_E2M3_fn = MinifloatMeta(exp_bits=2, frac_bits=3, is_finite=True, round_mode="rte", tag="FP6_E2M3_fn")
-FP6_E3M2_fn = MinifloatMeta(exp_bits=3, frac_bits=2, is_finite=True, round_mode="rte", tag="FP6_E3M2_fn")
-FP4_E2M1_fn = MinifloatMeta(exp_bits=2, frac_bits=1, is_finite=True, round_mode="rte", tag="FP4_E2M1_fn")
+FP8_E4M3_fn = MinifloatMeta(exp_bits=4, frac_bits=3, is_finite=True, round_mode="n", tag="FP8_E4M3_fn")
+FP8_E5M2_fn = MinifloatMeta(exp_bits=5, frac_bits=2, is_finite=True, round_mode="n", tag="FP8_E5M2_fn")
+FP6_E2M3_fn = MinifloatMeta(exp_bits=2, frac_bits=3, is_finite=True, round_mode="n", tag="FP6_E2M3_fn")
+FP6_E3M2_fn = MinifloatMeta(exp_bits=3, frac_bits=2, is_finite=True, round_mode="n", tag="FP6_E3M2_fn")
+FP4_E2M1_fn = MinifloatMeta(exp_bits=2, frac_bits=1, is_finite=True, round_mode="n", tag="FP4_E2M1_fn")
 # fmt: on
 
 

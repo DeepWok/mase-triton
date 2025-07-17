@@ -21,7 +21,7 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
     x = x.to(torch.float32)
     y_sign = x < 0
     x_int32 = x.abs().view(torch.int32)
-    flush_to_zero = (x_int32 >> 23) & 0xFF == 0
+    flush_to_zero = (x_int32 & 0x7F800000) == 0
     x_normal = torch.where(flush_to_zero, 0.0, x)
     # (float32, int32)
     x_frac, x_exp = x_normal.abs().frexp()
@@ -37,16 +37,16 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
     y_exp = y_exp + y_exp_bias
 
     x_frac_scaled = x_frac * (1 << y_frac_bits)
-    if round_mode == "rtz":
+    if round_mode == "z":
         # truncate towards zero
         y_frac = x_frac_scaled.view(torch.int32) >> (23 - y_frac_bits)
         y_frac = (y_frac << (23 - y_frac_bits)).view(torch.float32)
-    elif round_mode == "rte":
+    elif round_mode == "n":
         y_frac = x_frac_scaled.round()
-    elif round_mode == "rtp":
+    elif round_mode == "u":
         # round towards positive infinity
         y_frac = x_frac_scaled.ceil()
-    elif round_mode == "rtn":
+    elif round_mode == "d":
         # round towards negative infinity
         y_frac = x_frac_scaled.floor()
     else:

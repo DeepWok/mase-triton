@@ -119,7 +119,7 @@ def test_extract_compose_builtin_meta_saturate(
 
 @pytest.mark.parametrize("n_elements", [1024])
 @pytest.mark.parametrize("device", ["cuda", "cpu"])
-@pytest.mark.parametrize("round_mode", ["rtz", "rte", "rtp", "rtn"])
+@pytest.mark.parametrize("round_mode", ["z", "n", "u", "d"])
 @pytest.mark.parametrize("is_finite", [True, False])
 @pytest.mark.parametrize("exp_frac_bits", [(2, 1), (2, 3), (3, 2), (4, 3), (5, 2)])
 def test_extract_compose_random_meta(
@@ -147,9 +147,9 @@ def test_extract_compose_random_meta(
         assert error_ratio < 0.5
     elif meta.n_bits == 6:
         assert error_ratio < 0.3
-    elif meta.n_bits == 8 and meta.is_finite and meta.round_mode != "rtp":
+    elif meta.n_bits == 8 and meta.is_finite and meta.round_mode != "u":
         assert error_ratio < 0.1
-    elif meta.n_bits == 8 and meta.is_finite and meta.round_mode == "rtp":
+    elif meta.n_bits == 8 and meta.is_finite and meta.round_mode == "u":
         assert error_ratio < 0.2
     elif meta.n_bits == 8 and not meta.is_finite:
         assert error_ratio < 0.2
