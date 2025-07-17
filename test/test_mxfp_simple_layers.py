@@ -1,9 +1,9 @@
 import pytest
 import torch
 
-from mase_triton.mxfp.layers import MXFPLinearPTQ
-from mase_triton.mxfp.meta import OCP_MXFP8_E4M3, MXFPMeta
-from mase_triton.mxfp.utils import ChangeDtypeError, devices_equal
+from mase_triton.mxfp_simple.layers import MXFPLinearPTQ
+from mase_triton.mxfp_simple.meta import OCP_MXFP8_E4M3, MXFPMeta
+from mase_triton.mxfp_simple.utils import ChangeDtypeError, devices_equal
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)

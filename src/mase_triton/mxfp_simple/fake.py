@@ -92,7 +92,7 @@ def compose_mxfp_tensor(
     el_exp_frac_mask = (1 << (el_exp_bits + el_frac_bits)) - 1
 
     exp_max = scales.to(torch.uint16).view(torch.int16)
-    exp_max = exp_max.expand(-1, B)  # [n_blocks, B]
+    exp_max = exp_max.expand(n_blocks, B)  # [n_blocks, B]
 
     elements = elements.to(torch.int16)
     zero_mask = (elements & el_exp_frac_mask) == 0

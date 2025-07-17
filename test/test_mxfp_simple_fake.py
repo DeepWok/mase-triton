@@ -2,8 +2,8 @@ import pytest
 import torch
 
 from mase_triton.logging import set_logging_verbosity, test_logger
-from mase_triton.mxfp.fake import compose_mxfp_tensor, extract_mxfp_components
-from mase_triton.mxfp.meta import (
+from mase_triton.mxfp_simple.fake import compose_mxfp_tensor, extract_mxfp_components
+from mase_triton.mxfp_simple.meta import (
     OCP_MXFP4_E2M1,
     OCP_MXFP6_E2M3,
     OCP_MXFP6_E3M2,

@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from mase_triton.logging import set_logging_verbosity, test_logger
-from mase_triton.mxfp.functional import (
+from mase_triton.mxfp_simple.functional import (
     compose_mxfp_tensor,
     extract_mxfp_components,
     flatten_for_quantize,
@@ -10,7 +10,7 @@ from mase_triton.mxfp.functional import (
     permute_for_dequantize,
     quantize_dequantize,
 )
-from mase_triton.mxfp.meta import (
+from mase_triton.mxfp_simple.meta import (
     OCP_MXFP4_E2M1,
     OCP_MXFP6_E2M3,
     OCP_MXFP6_E3M2,
