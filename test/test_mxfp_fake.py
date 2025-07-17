@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from mase_triton.mxfp_ocp.fake import compose_mxfp_tensor, extract_mxfp_components
-from mase_triton.mxfp_ocp.meta import (
+from mase_triton.mxfp.fake import compose_mxfp_tensor, extract_mxfp_components
+from mase_triton.mxfp.meta import (
     OCP_MXFP4_E2M1,
     OCP_MXFP6_E2M3,
     OCP_MXFP6_E3M2,

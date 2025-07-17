@@ -1,9 +1,9 @@
 import pytest
 import torch
 
-from mase_triton.mxfp_simple import fake as mxfp_fake
-from mase_triton.mxfp_simple import kernels as mxfp_kernels
-from mase_triton.mxfp_simple.meta import (
+from mase_triton._mxfp_simple import fake as mxfp_fake
+from mase_triton._mxfp_simple import kernels as mxfp_kernels
+from mase_triton._mxfp_simple.meta import (
     OCP_MXFP4_E2M1,
     OCP_MXFP6_E2M3,
     OCP_MXFP6_E3M2,

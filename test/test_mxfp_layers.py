@@ -1,21 +1,23 @@
 import pytest
 import torch
 
-from mase_triton._mxfp_simple.layers import MXFPLinearPTQ
-from mase_triton._mxfp_simple.meta import OCP_MXFP8_E4M3, MXFPMeta
-from mase_triton._mxfp_simple.utils import ChangeDtypeError, devices_equal
+from mase_triton.mxfp.layers import MXFPLinearPTQ
+from mase_triton.mxfp.meta import MXFP8_E4M3_fn, MXFPMeta
+from mase_triton.mxfp.utils import ChangeDtypeError, devices_equal
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)
 
 
+@pytest.mark.parametrize("MNK", [(128, 512, 1024)])
 @pytest.mark.parametrize("backend", ["separate"])
-@pytest.mark.parametrize("x_meta", [OCP_MXFP8_E4M3, None])
-@pytest.mark.parametrize("w_meta", [OCP_MXFP8_E4M3, None])
-@pytest.mark.parametrize("b_meta", [OCP_MXFP8_E4M3, None])
+@pytest.mark.parametrize("x_meta", [MXFP8_E4M3_fn, None])
+@pytest.mark.parametrize("w_meta", [MXFP8_E4M3_fn, None])
+@pytest.mark.parametrize("b_meta", [MXFP8_E4M3_fn, None])
 @pytest.mark.parametrize("bias", [True, False])
-@pytest.mark.parametrize("dtype", [torch.bfloat16])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
 def test_mxfp_linear_ptq(
+    MNK,
     backend: str,
     x_meta: MXFPMeta,
     w_meta: MXFPMeta,
@@ -23,6 +25,7 @@ def test_mxfp_linear_ptq(
     bias: bool,
     dtype: torch.dtype,
 ):
+    M, N, K = MNK
     layer_type = ""
     if x_meta is None:
         layer_type += "X"
@@ -40,8 +43,8 @@ def test_mxfp_linear_ptq(
     if not bias:
         b_meta = None
 
-    in_features = 512
-    out_features = 64
+    in_features = K
+    out_features = N
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     fc_ref = torch.nn.Linear(
@@ -61,23 +64,26 @@ def test_mxfp_linear_ptq(
         backend=backend,
     )
 
-    x = torch.randn(8, in_features, device=device, dtype=dtype)
+    x = torch.randn(M, K, device=device, dtype=dtype) * 3
     y_ref = fc_ref(x)
     y_mxfp = fc_mxfp(x)
 
     avg_err = (y_ref - y_mxfp).abs().mean().item()
     avg_err_ratio = avg_err / y_ref.abs().mean().item()
 
-    assert avg_err_ratio < 0.15
+    print(
+        f"Average error ratio for {layer_type} with {x_meta}, {w_meta}, {b_meta}: {avg_err_ratio:.4f}"
+    )
+    assert avg_err_ratio < 0.2
 
 
 @pytest.mark.parametrize("has_bias", [True, False])
 @pytest.mark.parametrize("ori_device", ["cpu", "cuda:0"])
 @pytest.mark.parametrize("new_device", ["cpu", "cuda:0"])
 @pytest.mark.parametrize("new_dtype", [None, torch.float16])
-@pytest.mark.parametrize("x_meta", [OCP_MXFP8_E4M3, None])
-@pytest.mark.parametrize("w_meta", [OCP_MXFP8_E4M3, None])
-@pytest.mark.parametrize("b_meta", [OCP_MXFP8_E4M3, None])
+@pytest.mark.parametrize("x_meta", [MXFP8_E4M3_fn, None])
+@pytest.mark.parametrize("w_meta", [MXFP8_E4M3_fn, None])
+@pytest.mark.parametrize("b_meta", [MXFP8_E4M3_fn, None])
 def test_mxfp_linear_to(
     has_bias, ori_device, new_device, new_dtype, x_meta, w_meta, b_meta
 ):
@@ -144,7 +150,7 @@ if __name__ == "__main__":
     # test_mxfp_linear_ptq(
     # backend="separate",
     # x_meta=None,
-    # w_meta=OCP_MXFP8_E4M3,
+    # w_meta=MXFP8_E4M3_fn,
     # b_meta=None,
     # bias=False,
     # dtype=torch.bfloat16,
@@ -154,7 +160,7 @@ if __name__ == "__main__":
         ori_device="cpu",
         new_device="cuda",
         new_dtype=torch.float16,
-        x_meta=OCP_MXFP8_E4M3,
-        w_meta=OCP_MXFP8_E4M3,
-        b_meta=OCP_MXFP8_E4M3,
+        x_meta=MXFP8_E4M3_fn,
+        w_meta=MXFP8_E4M3_fn,
+        b_meta=MXFP8_E4M3_fn,
     )

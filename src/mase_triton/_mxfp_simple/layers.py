@@ -5,7 +5,7 @@ from torch import Tensor, nn
 
 from . import functional as MXFP_F
 from .meta import MXFPMeta, MXFPTensorMeta
-from .utils import ChangeDtypeError, devices_equal
+from .utils import ChangeDtypeError
 
 
 class MXFPLinearPTQ(nn.Module):

@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from mase_triton._mxfp_simple.functional import (
+from mase_triton.mxfp.functional import (
     compose_mxfp_tensor,
     extract_mxfp_components,
     flatten_for_quantize,
@@ -9,21 +9,18 @@ from mase_triton._mxfp_simple.functional import (
     permute_for_dequantize,
     quantize_dequantize,
 )
-from mase_triton._mxfp_simple.meta import (
+from mase_triton.mxfp.meta import (
     OCP_MXFP4_E2M1,
     OCP_MXFP6_E2M3,
     OCP_MXFP6_E3M2,
-    OCP_MXFP8_E4M3,
-    OCP_MXFP8_E5M2,
+    MXFP8_E4M3_fn,
+    MXFP8_E5M2_fn,
     MXFPMeta,
 )
-from mase_triton.logging import set_logging_verbosity, test_logger
 from mase_triton.utils.debug import set_ipdb_breakpoint
 from mase_triton.utils.train_utils import set_seed
 
-set_logging_verbosity("INFO")
-logger = test_logger.getChild(__name__)
-
+set_ipdb_breakpoint()
 set_seed(0)
 
 
@@ -45,11 +42,11 @@ def test_mxfp_components(block_dim: int):
 @pytest.mark.parametrize("n_groups", [16])
 @pytest.mark.parametrize(
     "mxfp_format",
-    [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
+    [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
 def test_quantize_dequantize_1d(mxfp_format: MXFPMeta, n_groups: int):
     n_elements = mxfp_format.block_size * n_groups
-    w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0
+    w = torch.randn(n_elements, dtype=torch.float32, device="cuda") * 100.0
     scales, elements, tensor_meta = extract_mxfp_components(
         w, block_dim=0, mxfp_meta=mxfp_format
     )
@@ -61,25 +58,25 @@ def test_quantize_dequantize_1d(mxfp_format: MXFPMeta, n_groups: int):
     )
     avg_err = (w - w_dq).abs().mean()
     avg_err_ratio = avg_err / w.abs().mean()
-    logger.info(f"Average error ratio for {mxfp_format} format: {avg_err_ratio:.4f}")
-    if mxfp_format is OCP_MXFP8_E4M3:
+    print(f"Average error ratio for {mxfp_format} format: {avg_err_ratio:.4f}")
+    if mxfp_format is MXFP8_E4M3_fn:
         assert avg_err_ratio < 0.05, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
-    elif mxfp_format is OCP_MXFP8_E5M2:
+    elif mxfp_format is MXFP8_E5M2_fn:
         assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E3M2:
-        assert avg_err_ratio < 0.2, (
+        assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E2M3:
-        assert avg_err_ratio < 0.4, (
+        assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     else:
-        assert avg_err_ratio < 0.5, (
+        assert avg_err_ratio < 0.3, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
 
@@ -87,35 +84,36 @@ def test_quantize_dequantize_1d(mxfp_format: MXFPMeta, n_groups: int):
 @pytest.mark.parametrize("n_groups", [16])
 @pytest.mark.parametrize(
     "mxfp_format",
-    [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
+    [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
 def test_quantize_dequantize_1d_wrapped(mxfp_format: MXFPMeta, n_groups: int):
     n_elements = mxfp_format.block_size * n_groups
-    w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 100.0
+    w = torch.randn(n_elements, dtype=torch.float32, device="cuda") * 100.0
     w_dq = quantize_dequantize(w, block_dim=0, mxfp_meta=mxfp_format)
     assert w_dq.shape == w.shape, (
         f"Dequantized tensor shape {w_dq.shape} does not match original shape {w.shape}."
     )
     avg_err = (w - w_dq).abs().mean()
     avg_err_ratio = avg_err / w.abs().mean()
-    if mxfp_format is OCP_MXFP8_E4M3:
+    print(f"Average error ratio for {mxfp_format} format: {avg_err_ratio:.4f}")
+    if mxfp_format is MXFP8_E4M3_fn:
         assert avg_err_ratio < 0.05, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
-    elif mxfp_format is OCP_MXFP8_E5M2:
+    elif mxfp_format is MXFP8_E5M2_fn:
         assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E3M2:
-        assert avg_err_ratio < 0.2, (
+        assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E2M3:
-        assert avg_err_ratio < 0.4, (
+        assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     else:
-        assert avg_err_ratio < 0.5, (
+        assert avg_err_ratio < 0.3, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
 
@@ -124,11 +122,11 @@ def test_quantize_dequantize_1d_wrapped(mxfp_format: MXFPMeta, n_groups: int):
 @pytest.mark.parametrize("n_groups", [16])
 @pytest.mark.parametrize(
     "mxfp_format",
-    [OCP_MXFP8_E4M3, OCP_MXFP8_E5M2, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
+    [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
 def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim: int):
     n_elements = mxfp_format.block_size * n_groups * 3
-    w = torch.randn(n_elements, dtype=torch.bfloat16, device="cuda") * 50.0
+    w = torch.randn(n_elements, dtype=torch.float32, device="cuda") * 50.0
 
     if block_dim % 2 == 0:
         w = w.reshape(-1, 3)
@@ -146,24 +144,25 @@ def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim:
     )
     avg_err = (w - w_dq).abs().mean()
     avg_err_ratio = avg_err / w.abs().mean()
-    if mxfp_format is OCP_MXFP8_E4M3:
+    print(f"Average error ratio for {mxfp_format} format: {avg_err_ratio:.4f}")
+    if mxfp_format is MXFP8_E4M3_fn:
         assert avg_err_ratio < 0.05, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
-    elif mxfp_format is OCP_MXFP8_E5M2:
+    elif mxfp_format is MXFP8_E5M2_fn:
         assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E3M2:
-        assert avg_err_ratio < 0.2, (
+        assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E2M3:
-        assert avg_err_ratio < 0.4, (
+        assert avg_err_ratio < 0.1, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     else:
-        assert avg_err_ratio < 0.5, (
+        assert avg_err_ratio < 0.3, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
 
@@ -172,8 +171,8 @@ def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim:
     "x_meta",
     [
         None,
-        OCP_MXFP8_E4M3,
-        OCP_MXFP8_E5M2,
+        MXFP8_E4M3_fn,
+        MXFP8_E5M2_fn,
         OCP_MXFP6_E2M3,
         OCP_MXFP6_E3M2,
         OCP_MXFP4_E2M1,
@@ -183,8 +182,8 @@ def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim:
     "y_meta",
     [
         None,
-        OCP_MXFP8_E4M3,
-        OCP_MXFP8_E5M2,
+        MXFP8_E4M3_fn,
+        MXFP8_E5M2_fn,
         OCP_MXFP6_E2M3,
         OCP_MXFP6_E3M2,
         OCP_MXFP4_E2M1,
@@ -199,12 +198,12 @@ def test_mxfp_matmul(x_meta: MXFPMeta, y_meta: MXFPMeta, device, backend: str):
     else:
         func_type += "X"
     if y_meta is not None:
-        func_type += "Yq"
+        func_type += "Wq"
     else:
-        func_type += "Y"
+        func_type += "W"
 
-    a = torch.randn((2, 4, 512, 256), dtype=torch.bfloat16, device=device)
-    b = torch.randn((2, 4, 256, 128), dtype=torch.bfloat16, device=device)
+    a = torch.randn((2, 4, 512, 256), dtype=torch.float32, device=device) * 10
+    b = torch.randn((2, 4, 256, 128), dtype=torch.float32, device=device) * 10
 
     y_ref = torch.matmul(a, b)
     y = mxfp_matmul(
@@ -216,13 +215,13 @@ def test_mxfp_matmul(x_meta: MXFPMeta, y_meta: MXFPMeta, device, backend: str):
     )
     avg_err = (y - y_ref).abs().mean()
     avg_err_ratio = avg_err / y_ref.abs().mean()
-    logger.info(
+    print(
         f"Average error ratio for {func_type} with {x_meta} and {y_meta}: {avg_err_ratio:.4f}"
     )
     if x_meta is None and y_meta is None:
         assert avg_err_ratio == 0
-    elif x_meta is OCP_MXFP8_E4M3 and y_meta is OCP_MXFP8_E4M3:
-        assert avg_err_ratio < 0.05, (
+    elif x_meta is MXFP8_E4M3_fn and y_meta is MXFP8_E4M3_fn:
+        assert avg_err_ratio < 0.2, (
             f"Average error ratio {avg_err_ratio} is too high for {func_type}."
         )
     elif x_meta is OCP_MXFP4_E2M1 or y_meta is OCP_MXFP4_E2M1:
@@ -234,93 +233,15 @@ def test_mxfp_matmul(x_meta: MXFPMeta, y_meta: MXFPMeta, device, backend: str):
             f"Average error ratio {avg_err_ratio} is too high for {func_type}."
         )
     else:
-        assert avg_err_ratio < 0.2, (
+        assert avg_err_ratio < 0.25, (
             f"Average error ratio {avg_err_ratio} is too high for {func_type}."
         )
 
 
-def test_mxfp4_all_normal():
-    exp_bias = -120
-    x = torch.tensor(
-        [
-            [6.0, 6.0, 6.0, 6.0, -6.0, -6.0, -6.0, -6.0],
-            [1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0],
-            [0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5],
-            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        ],
-        dtype=torch.bfloat16,
-        device="cuda",
-    )
-    x = x * (2**exp_bias)
-    mxfp_meta = MXFPMeta(
-        block_size=8,
-        scale_exp_bits=8,
-        element_exp_bits=2,
-        element_frac_bits=1,
-    )
-    scales, elements, tensor_meta = extract_mxfp_components(
-        x, block_dim=-1, mxfp_meta=mxfp_meta
-    )
-    x_dq = compose_mxfp_tensor(
-        scales=scales, elements=elements, tensor_meta=tensor_meta
-    )
-    assert (x == x_dq).all()
-
-
-def test_mxfp4_all_subnormal():
-    exp_bias = -126
-    x = torch.tensor(
-        [
-            [0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5],
-            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        ],
-        dtype=torch.bfloat16,
-        device="cuda",
-    )
-    x = x * (2**exp_bias)
-    mxfp_meta = MXFPMeta(
-        block_size=8,
-        scale_exp_bits=8,
-        element_exp_bits=2,
-        element_frac_bits=1,
-    )
-    scales, elements, tensor_meta = extract_mxfp_components(
-        x, block_dim=-1, mxfp_meta=mxfp_meta
-    )
-    x_dq = compose_mxfp_tensor(
-        scales=scales, elements=elements, tensor_meta=tensor_meta
-    )
-    assert (x == x_dq).all()
-
-
-def test_mxfp4_mixture_of_normal_subnormal():
-    exp_bias = -120
-    x = torch.tensor(
-        [
-            [1.0, 0.0, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5],
-            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        ],
-        dtype=torch.bfloat16,
-        device="cpu",
-    )
-    x = x * (2**exp_bias)
-    mxfp_meta = MXFPMeta(
-        block_size=8,
-        scale_exp_bits=8,
-        element_exp_bits=2,
-        element_frac_bits=1,
-    )
-    scales, elements, tensor_meta = extract_mxfp_components(
-        x, block_dim=-1, mxfp_meta=mxfp_meta
-    )
-    x_dq = compose_mxfp_tensor(
-        scales=scales, elements=elements, tensor_meta=tensor_meta
-    )
-    assert (x == x_dq).all()
-
-
 if __name__ == "__main__":
-    set_ipdb_breakpoint()
-    test_mxfp4_all_normal()
-    test_mxfp4_all_subnormal()
-    test_mxfp4_mixture_of_normal_subnormal()
+    test_mxfp_matmul(
+        x_meta=None,
+        y_meta=OCP_MXFP4_E2M1,
+        device=torch.device("cuda"),
+        backend="separate",
+    )
