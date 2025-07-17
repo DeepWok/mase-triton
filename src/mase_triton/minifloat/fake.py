@@ -1,16 +1,15 @@
 import torch
 from torch import Tensor
 
-from ..utils.bit_repr import get_binary_repr, get_binary_repr_fp32
 from .meta import MinifloatMeta
 
 
-def extract_minifloat_component(x: Tensor, meta: MinifloatMeta) -> Tensor:
-    y_exp_bits = meta.exp_bits
-    y_frac_bits = meta.frac_bits
-    always_finite = meta.is_finite
+def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Tensor:
+    y_exp_bits = minifloat_meta.exp_bits
+    y_frac_bits = minifloat_meta.frac_bits
+    always_finite = minifloat_meta.is_finite
 
-    round_mode = meta.round_mode
+    round_mode = minifloat_meta.round_mode
     y_exp_bias = (1 << (y_exp_bits - 1)) - 1  # 2^(y_exp_bits - 1) - 1
     # if always_finite: 2^y_exp_bits - 1 - bias = 2^y_exp_bits - 1 - 2^(y_exp_bits - 1) + 1 = 2^(y_exp_bits - 1)
     y_exp_max = (1 << y_exp_bits) - 1 if always_finite else (1 << y_exp_bits) - 2
@@ -63,6 +62,9 @@ def extract_minifloat_component(x: Tensor, meta: MinifloatMeta) -> Tensor:
     # overflow -> max
     y_frac = torch.where(overflow, y_frac_max, y_frac)
     y_exp = torch.where(overflow, y_exp_max, y_exp)
+    # flush to zero
+    y_frac = torch.where(flush_to_zero, 0, y_frac)
+    y_exp = torch.where(flush_to_zero, 0, y_exp)
     if not always_finite:
         y_frac = torch.where(x_is_inf, 0, y_frac)
         y_frac = torch.where(x_is_nan, (1 << y_frac_bits) - 1, y_frac)
@@ -74,10 +76,12 @@ def extract_minifloat_component(x: Tensor, meta: MinifloatMeta) -> Tensor:
     return y
 
 
-def compose_minifloat_component(elements: Tensor, meta: MinifloatMeta) -> Tensor:
-    x_exp_bits = meta.exp_bits
-    x_frac_bits = meta.frac_bits
-    always_finite = meta.is_finite
+def compose_minifloat_component(
+    elements: Tensor, minifloat_meta: MinifloatMeta
+) -> Tensor:
+    x_exp_bits = minifloat_meta.exp_bits
+    x_frac_bits = minifloat_meta.frac_bits
+    always_finite = minifloat_meta.is_finite
 
     fp32_exp_bias = 127
 

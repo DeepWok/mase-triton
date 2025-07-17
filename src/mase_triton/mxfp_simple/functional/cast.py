@@ -32,19 +32,17 @@ def extract_mxfp_components(
     ndim = len(ori_shape)
     assert block_dim < ndim and block_dim >= -ndim
 
-    assert device.startswith("cpu") or device.startswith("cuda"), (
-        f"Unsupported device: {device}. Only 'cpu' and 'cuda' are supported."
-    )
     tensor = tensor.to(torch.bfloat16)
     tensor = flatten_for_quantize(tensor, block_dim)
-    if device == "cpu":
-        scales, elements = mxfp_fake.extract_mxfp_components(
-            tensor, mxfp_meta=mxfp_meta
-        )
-    else:
+    if device.startswith("cuda"):
         scales, elements = mxfp_kernels.extract_mxfp_components(
             tensor, mxfp_meta=mxfp_meta
         )
+    else:
+        scales, elements = mxfp_fake.extract_mxfp_components(
+            tensor, mxfp_meta=mxfp_meta
+        )
+
     tensor_meta = MXFPTensorMeta(
         device=device,
         dtype=ori_dtype,

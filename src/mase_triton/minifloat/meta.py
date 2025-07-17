@@ -71,23 +71,23 @@ class MinifloatMeta:
         assert self.exp_bits + self.frac_bits < 16
 
     @functools.cached_property
-    def n_bits(self):
+    def n_bits(self) -> int:
         return self.exp_bits + self.frac_bits + 1
 
     @functools.cached_property
-    def max_normal(self):
+    def max_normal(self) -> float:
         return _calc_max_normal(self.exp_bits, self.frac_bits, self.is_finite)
 
     @functools.cached_property
-    def min_normal(self):
+    def min_normal(self) -> float:
         return _calc_min_normal(self.exp_bits, self.frac_bits)
 
     @functools.cached_property
-    def max_subnormal(self):
+    def max_subnormal(self) -> float:
         return _calc_max_subnormal(self.exp_bits, self.frac_bits)
 
     @functools.cached_property
-    def min_subnormal(self):
+    def min_subnormal(self) -> float:
         return _calc_min_subnormal(self.exp_bits, self.frac_bits)
 
 
@@ -98,3 +98,11 @@ FP6_E2M3_fn = MinifloatMeta(exp_bits=2, frac_bits=3, is_finite=True, round_mode=
 FP6_E3M2_fn = MinifloatMeta(exp_bits=3, frac_bits=2, is_finite=True, round_mode="rte", tag="FP6_E3M2_fn")
 FP4_E2M1_fn = MinifloatMeta(exp_bits=2, frac_bits=1, is_finite=True, round_mode="rte", tag="FP4_E2M1_fn")
 # fmt: on
+
+
+@dataclass
+class MinifloatTensorMeta:
+    device: str
+    dtype: str
+    shape: tuple[int, ...]
+    meta: MinifloatMeta

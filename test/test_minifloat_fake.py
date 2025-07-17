@@ -13,8 +13,10 @@ from mase_triton.minifloat.meta import (
     FP8_E5M2_fn,
     MinifloatMeta,
 )
+from mase_triton.utils.debug import set_ipdb_breakpoint
 from mase_triton.utils.train_utils import set_seed
 
+set_ipdb_breakpoint()
 set_seed(42)
 
 
@@ -61,7 +63,7 @@ def test_fp4_compose(device: str):
     # fmt: on
     x_fp4_ref = [minifloat_bin_to_float(x, exp_bits=2, frac_bits=1) for x in x_raw]
     x = torch.tensor(x_raw, dtype=torch.uint16, device=device)
-    x_fp4 = compose_minifloat_component(x, meta=FP4_E2M1_fn)
+    x_fp4 = compose_minifloat_component(x, minifloat_meta=FP4_E2M1_fn)
     x_fp4_ref = torch.tensor(x_fp4_ref, dtype=torch.float32, device=device)
     assert (x_fp4 == x_fp4_ref).all(), f"Expected {x_fp4_ref}, \ngot {x_fp4}"
 
@@ -82,8 +84,8 @@ def test_extract_compose_builtin_meta(
     meta: MinifloatMeta, device: str, n_elements: int
 ):
     x = torch.randn(n_elements, dtype=torch.float32, device=device)
-    x_q = extract_minifloat_component(x, meta=meta)
-    x_dq = compose_minifloat_component(x_q, meta=meta)
+    x_q = extract_minifloat_component(x, minifloat_meta=meta)
+    x_dq = compose_minifloat_component(x_q, minifloat_meta=meta)
     err = (x - x_dq).abs().mean()
     err_ratio = (err / x.abs().mean()).item()
     print(f"Average error ratio for {meta}: {err_ratio:.4f}")
@@ -110,8 +112,8 @@ def test_extract_compose_builtin_meta_saturate(
     meta: MinifloatMeta, device: str, n_elements: int
 ):
     x = torch.ones(n_elements, dtype=torch.float32, device=device) * meta.max_normal * 2
-    x_q = extract_minifloat_component(x, meta=meta)
-    x_dq = compose_minifloat_component(x_q, meta=meta)
+    x_q = extract_minifloat_component(x, minifloat_meta=meta)
+    x_dq = compose_minifloat_component(x_q, minifloat_meta=meta)
     assert (x_dq == meta.max_normal).all()
 
 
@@ -136,8 +138,8 @@ def test_extract_compose_random_meta(
         round_mode=round_mode,
     )
     x = torch.randn(n_elements, dtype=torch.float32, device=device) * 2.5
-    x_q = extract_minifloat_component(x, meta=meta)
-    x_dq = compose_minifloat_component(x_q, meta=meta)
+    x_q = extract_minifloat_component(x, minifloat_meta=meta)
+    x_dq = compose_minifloat_component(x_q, minifloat_meta=meta)
     error = (x - x_dq).abs().mean()
     error_ratio = (error / x.abs().mean()).item()
     print(f"Average error ratio for {meta}: {error_ratio:.4f}")
@@ -156,8 +158,5 @@ def test_extract_compose_random_meta(
 
 
 if __name__ == "__main__":
-    from mase_triton.utils.debug import set_ipdb_breakpoint
-
-    set_ipdb_breakpoint()
     # test_fp4_compose("cpu")
     test_extract_compose_builtin_meta_saturate(FP4_E2M1_fn, "cpu", 8)
