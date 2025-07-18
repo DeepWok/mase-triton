@@ -3,6 +3,12 @@ import triton
 from torch import Tensor
 from triton import language as tl
 
+from ...dtype import TORCH_DTYPE_TO_TRITON
+from ...manager import KernelManager
+from ...minifloat.kernels.cast import (
+    _compose_minifloat_component_core,
+    _extract_minifloat_component_core,
+)
 from ..meta import MXFPMeta
 
 
@@ -15,6 +21,35 @@ def _find_block_max(x: Tensor, block_size: int) -> Tensor:
     return group_max
 
 
+def _get_default_config_extract_mxfp_components_kernel():
+    return [triton.Config({"BLK": 256}, num_stages=4)]
+
+
+def _get_autotune_configs_extract_mxfp_components_kernel():
+    block_sizes = [128, 256, 512, 1024]
+    stages = [4, 5]
+    configs = []
+    for bs in block_sizes:
+        for s in stages:
+            configs.append(triton.Config({"BLK": bs}, num_stages=s))
+    return configs
+
+
+@triton.autotune(
+    configs=_get_autotune_configs_extract_mxfp_components_kernel()
+    if KernelManager.autotune_is_enabled()
+    else _get_default_config_extract_mxfp_components_kernel(),
+    key=[
+        "n_elements",
+        "n_blocks",
+        "block_size",
+        "sc_exp_bits",
+        "el_exp_bits",
+        "el_frac_bits",
+        "el_is_finite",
+        "x_dtype",
+    ],
+)
 @triton.jit
 def _extract_mxfp_components_kernel(
     x_ptr,
@@ -26,81 +61,78 @@ def _extract_mxfp_components_kernel(
     block_size: tl.constexpr,
     sc_exp_bits: tl.constexpr,
     el_exp_bits: tl.constexpr,
-    el_man_bits: tl.constexpr,
+    el_frac_bits: tl.constexpr,
+    el_is_finite: tl.constexpr,
     BLK: tl.constexpr,
+    x_dtype: tl.constexpr,
 ):
     # helper constants
+
+    fp32_exp_mask = 0x7F800000
     sc_exp_max = (1 << sc_exp_bits) - 1
-    el_exp_max = (1 << el_exp_bits) - 1
+    sc_exp_min = 0
+    sc_exp_bias = (1 << (sc_exp_bits - 1)) - 1
+    sc_exp_max_biased = sc_exp_max - sc_exp_bias
+    sc_exp_min_biased = sc_exp_min - sc_exp_bias
+
+    el_exp_max = (1 << el_exp_bits) - 1 if el_is_finite else (1 << el_exp_bits) - 2
     el_exp_bias = (1 << (el_exp_bits - 1)) - 1
-    el_man_max = (1 << el_man_bits) - 1
-    el_sign_mask = 1 << (el_exp_bits + el_man_bits)
-    el_implicit_bit = 1 << el_man_bits
+    el_exp_max_biased = el_exp_max - el_exp_bias
 
     pid = tl.program_id(axis=0)
     x_offs = pid * BLK + tl.arange(0, BLK)
     block_max_offs = x_offs // block_size
 
     x_ptrs = x_ptr + x_offs
-    block_max_ptrs = block_max_ptr + block_max_offs
     x = tl.load(x_ptrs, mask=x_offs < n_elements, other=0.0)
+    x_fp32 = x.cast(tl.float32)
+    x_int32 = x_fp32.cast(tl.int32, bitcast=True)
+
+    block_max_ptrs = block_max_ptr + block_max_offs
     block_max = tl.load(block_max_ptrs, mask=block_max_offs < n_blocks, other=0.0)
+    block_max = block_max.cast(tl.float32)
 
-    x = x.cast(tl.int16, bitcast=True)
-    block_max = block_max.cast(tl.int16, bitcast=True)
-    exp_max = (block_max & 0x7F80) >> 7  # 0-255
-    # flush_to_zero_mask = exp_max == 0
-    zero_mask = (x & 0x7FFF) == 0
-    el_exp = (x & 0x7F80) >> 7  # 0-255
-    el_exp = (el_exp - exp_max).to(tl.int16)
-    el_exp = (el_exp + el_exp_bias).to(tl.int16)
-    subnormal_mask = (el_exp == 0) & (~zero_mask)
-    underflow_mask = (el_exp < 0) | zero_mask
-    overflow_mask = el_exp > el_exp_max
-    el_exp = tl.where(underflow_mask, 0, el_exp)
-    el_exp = tl.where(overflow_mask, el_exp_max, el_exp)
-
-    el_mantissa = x & 0x007F
-    el_mantissa = el_mantissa >> (7 - el_man_bits)
-    el_mantissa = tl.where(
-        subnormal_mask, (el_implicit_bit | el_mantissa) >> 1, el_mantissa
-    )
-    el_mantissa = tl.where(underflow_mask, 0, el_mantissa)
-    el_mantissa = tl.where(overflow_mask, el_man_max, el_mantissa)
-
-    sign = x & -32768  # 0x8000
-    sign = sign >> (15 - (el_exp_bits + el_man_bits))
-    sign = sign & el_sign_mask
-
-    el = sign | (el_exp << el_man_bits) | el_mantissa
-    el = el.cast(tl.uint8)
-
-    el_ptrs = element_ptr + x_offs
-    tl.store(el_ptrs, el, mask=x_offs < n_elements)
-
-    sc = tl.minimum(exp_max, sc_exp_max)
-    sc = tl.maximum(sc, 0).cast(tl.uint8)
+    flush_to_zero = (x_int32 & fp32_exp_mask) == 0
+    shared_exp = block_max.abs().log2().floor()
+    shared_exp = shared_exp - el_exp_max_biased
+    shared_exp = tl.clamp(shared_exp, sc_exp_min_biased, sc_exp_max_biased)
+    scales_uint = shared_exp.to(tl.int32) + sc_exp_bias
+    scales_uint = tl.where(flush_to_zero, 0, scales_uint)
+    scales_uint = scales_uint.to(tl.uint8)
+    # store scales
     sc_ptrs = scale_ptr + block_max_offs
     sc_mask = (block_max_offs < n_blocks) & (x_offs % block_size == 0)
-    tl.store(sc_ptrs, sc, mask=sc_mask)
+    tl.store(sc_ptrs, scales_uint, mask=sc_mask)
+
+    scales_fp = tl.exp2(shared_exp)
+    minifloats = x_fp32 / scales_fp
+    minifloats = tl.where(flush_to_zero, 0.0, minifloats)
+    elements = _extract_minifloat_component_core(
+        minifloats,
+        exp_bits=el_exp_bits,
+        frac_bits=el_frac_bits,
+        is_finite=el_is_finite,
+        x_dtype=tl.float32,
+    )
+    elements = elements.to(tl.uint8)
+    # store elements
+    el_ptrs = element_ptr + x_offs
+    tl.store(el_ptrs, elements, mask=x_offs < n_elements)
 
 
-def extract_mxfp_components(
-    x: Tensor,
-    mxfp_meta: MXFPMeta,
-):
-    assert x.dtype == torch.bfloat16
+def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Tensor]:
     assert x.ndim == 1
     x = x.contiguous()
     n_elements = x.numel()
-    B = mxfp_meta.block_size
-    assert n_elements % B == 0
-    n_groups = n_elements // B
+    block_size = mxfp_meta.block_size
+    assert n_elements % block_size == 0
+    n_groups = n_elements // block_size
     device = x.device
-    scales = torch.empty((n_groups, 1), dtype=torch.uint8, device=device)
-    elements = torch.empty((n_groups, B), dtype=torch.uint8, device=device)
 
-    block_max = _find_block_max(x, B)
+    scales = torch.empty((n_groups, 1), dtype=torch.uint8, device=device)
+    elements = torch.empty((n_groups, block_size), dtype=torch.uint8, device=device)
+
+    block_max = _find_block_max(x, block_size=block_size).float()
 
     def grid(meta):
         return (triton.cdiv(n_elements, meta["BLK"]),)
@@ -113,16 +145,47 @@ def extract_mxfp_components(
             scales,
             n_elements=n_elements,
             n_blocks=n_groups,
-            block_size=B,
+            block_size=block_size,
             sc_exp_bits=mxfp_meta.scale_exp_bits,
             el_exp_bits=mxfp_meta.element_exp_bits,
-            el_man_bits=mxfp_meta.element_frac_bits,
-            BLK=128,
+            el_frac_bits=mxfp_meta.element_frac_bits,
+            el_is_finite=mxfp_meta.element_is_finite,
+            x_dtype=TORCH_DTYPE_TO_TRITON[x.dtype],
         )
 
     return scales, elements
 
 
+def _get_default_config_compose_mxfp_tensor_kernel():
+    return [triton.Config({"BLK": 512}, num_stages=4)]
+
+
+def _get_autotune_configs_compose_mxfp_tensor_kernel():
+    block_sizes = [128, 256, 512, 1024]
+    stages = [4, 5]
+    configs = []
+    for bs in block_sizes:
+        for s in stages:
+            configs.append(triton.Config({"BLK": bs}, num_stages=s))
+    return configs
+
+
+@triton.autotune(
+    configs=_get_autotune_configs_compose_mxfp_tensor_kernel()
+    if KernelManager.autotune_is_enabled()
+    else _get_default_config_compose_mxfp_tensor_kernel(),
+    key=[
+        "n_elements",
+        "n_blocks",
+        "block_size",
+        "sc_exp_bits",
+        "el_exp_bits",
+        "el_frac_bits",
+        "el_is_finite",
+        "element_dtype",
+        "output_dtype",
+    ],
+)
 @triton.jit
 def _compose_mxfp_tensor_kernel(
     scales_ptr,
@@ -133,16 +196,13 @@ def _compose_mxfp_tensor_kernel(
     block_size: tl.constexpr,
     sc_exp_bits: tl.constexpr,
     el_exp_bits: tl.constexpr,
-    el_man_bits: tl.constexpr,
+    el_frac_bits: tl.constexpr,
+    el_is_finite: tl.constexpr,
     BLK: tl.constexpr,
+    element_dtype: tl.constexpr,
+    output_dtype: tl.constexpr,
 ):
-    # helper constants
-    el_exp_man_bits = el_exp_bits + el_man_bits
-    el_exp_bias = (1 << (el_exp_bits - 1)) - 1
-    el_exp_man_mask = (1 << (el_exp_bits + el_man_bits)) - 1
-    el_man_mask = (1 << el_man_bits) - 1
-    el_exp_mask = (1 << el_exp_bits) - 1
-    el_exp_frac_mask = (1 << (el_exp_bits + el_man_bits)) - 1
+    sc_exp_bias = (1 << (sc_exp_bits - 1)) - 1
 
     pid = tl.program_id(axis=0)
 
@@ -154,62 +214,55 @@ def _compose_mxfp_tensor_kernel(
     sc = tl.load(sc_ptrs, mask=sc_offs < n_blocks, other=0)
     el = tl.load(el_ptrs, mask=el_offs < n_elements, other=0)
 
-    underflow_mask = (el & el_exp_man_mask) == 0
-    exp_max = sc.to(tl.uint16).cast(tl.int16, bitcast=True)
-    el = el.to(tl.uint16).cast(tl.int16, bitcast=True)
-    zero_mask = (el & el_exp_frac_mask) == 0
-    el_sign = (el << (15 - el_exp_man_bits)).cast(tl.int16)
-    el_sign = el_sign & -32768  # 0x8000
+    scales_fp = sc.cast(tl.float32)
+    scales_fp = tl.exp2(scales_fp - sc_exp_bias)
+    minifloats = _compose_minifloat_component_core(
+        el,
+        exp_bits=el_exp_bits,
+        frac_bits=el_frac_bits,
+        is_finite=el_is_finite,
+        element_dtype=element_dtype,
+    )
+    minifloats = minifloats * scales_fp
+    minifloats = minifloats.to(output_dtype)
 
-    el_exp = ((el >> el_man_bits) & el_exp_mask).cast(tl.int16)
-    subnormal_mask = (el_exp == 0) & (~zero_mask)
-    el_man = tl.where(subnormal_mask, el << 1, el)
-    el_man = (el_man & el_man_mask).cast(tl.int16)
-    el_man = el_man << (7 - el_man_bits)
-
-    el_exp = (el_exp - el_exp_bias).to(tl.int16)
-    el_exp = (el_exp + exp_max).to(tl.int16)
-    el_exp = el_exp << 7
-
-    dq = el_sign | el_exp | el_man
-    dq = tl.where(underflow_mask, 0, dq)
-
-    dq_ptrs = output_ptr + el_offs
-    dq = dq.cast(tl.bfloat16, bitcast=True)
-    tl.store(dq_ptrs, dq, mask=el_offs < n_elements)
+    out_ptrs = output_ptr + el_offs
+    tl.store(out_ptrs, minifloats, mask=el_offs < n_elements)
 
 
 def compose_mxfp_tensor(
-    shared_scales: Tensor,
+    scales: Tensor,
     elements: Tensor,
     mxfp_meta: MXFPMeta,
+    output_dtype: torch.dtype,
 ) -> Tensor:
-    assert shared_scales.dtype == torch.uint8
+    assert scales.dtype == torch.uint8
     assert elements.dtype == torch.uint8
 
-    B = mxfp_meta.block_size
     n_elements = elements.numel()
-    n_blocks = shared_scales.shape[0]
-    device = shared_scales.device
-    elements = elements.contiguous()
-    shared_scales = shared_scales.contiguous()
+    block_size = mxfp_meta.block_size
+    n_blocks = n_elements // block_size
+
+    device = elements.device
+    output = torch.empty((n_elements,), dtype=output_dtype, device=device)
 
     def grid(meta):
         return (triton.cdiv(n_elements, meta["BLK"]),)
 
-    output = torch.empty(n_elements, dtype=torch.bfloat16, device=device)
-
     with torch.cuda.device(device.index):
         _compose_mxfp_tensor_kernel[grid](
-            shared_scales,
+            scales,
             elements,
             output,
             n_elements=n_elements,
             n_blocks=n_blocks,
-            block_size=B,
+            block_size=block_size,
             sc_exp_bits=mxfp_meta.scale_exp_bits,
             el_exp_bits=mxfp_meta.element_exp_bits,
-            el_man_bits=mxfp_meta.element_frac_bits,
-            BLK=128,
+            el_frac_bits=mxfp_meta.element_frac_bits,
+            el_is_finite=mxfp_meta.element_is_finite,
+            element_dtype=TORCH_DTYPE_TO_TRITON[elements.dtype],
+            output_dtype=TORCH_DTYPE_TO_TRITON[output.dtype],
         )
+
     return output

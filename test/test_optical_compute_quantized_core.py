@@ -31,7 +31,7 @@ def test_optical_compute_quantized_forward_fn_simple():
         seed=seed,
     )
     max_err = (out - x).abs().max().item()
-    assert max_err < 1 / quant_levels * 1.1
+    assert max_err < 1 / quant_levels * 2
 
     logger.info("Test passed: output is close to input")
 

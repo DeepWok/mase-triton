@@ -1,116 +1,77 @@
 import torch
 from torch import Tensor
 
+from ..minifloat.fake import (
+    compose_minifloat_component,
+    extract_minifloat_component,
+)
 from .meta import MXFPMeta
 
 
-def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Tensor]:
-    """
-    Extracts the scale and element components from a MXFP tensor.
-
-    Args:
-        x (Tensor): The input MXFP tensor.
-        mxfp_meta (MXFPMeta): The metadata for the MXFP format.
-    Returns:
-        tuple[Tensor, Tensor]: A tuple containing the scale (shape = [num_blocks, 1]) and element tensors (shape = [num_blocks, block_size]).
-    """
-    assert x.dtype == torch.bfloat16
+def extract_mxfp_components(tensor: Tensor, mxfp_meta: MXFPMeta):
+    tensor = tensor.float()
     B = mxfp_meta.block_size
-    assert x.numel() % B == 0, (
-        f"Input tensor size {x.numel()} is not divisible by block size {B}."
+    assert tensor.numel() % B == 0
+
+    n_blocks = tensor.numel() // B
+
+    fp32_exp_mask = 0x7F800000
+
+    sc_exp_max = (1 << mxfp_meta.scale_exp_bits) - 1
+    sc_exp_min = 0
+    sc_exp_bias = (1 << (mxfp_meta.scale_exp_bits - 1)) - 1
+    sc_exp_max_biased = sc_exp_max - sc_exp_bias
+    sc_exp_min_biased = sc_exp_min - sc_exp_bias
+
+    el_exp_max = (
+        (1 << mxfp_meta.element_exp_bits) - 1
+        if mxfp_meta.element_is_finite
+        else (1 << mxfp_meta.element_exp_bits) - 2
     )
-    n_blocks = x.numel() // B
-    sc_exp_max = (2 << mxfp_meta.scale_exp_bits) - 1
-    el_exp_bits = mxfp_meta.element_exp_bits
-    el_exp_max = (2 << el_exp_bits) - 1
-    el_exp_bias = (1 << (el_exp_bits - 1)) - 1
-    el_frac_bits = mxfp_meta.element_frac_bits
-    el_frac_max = (2 << el_frac_bits) - 1
-    el_implicit_bit = 1 << el_frac_bits
-    el_sign_mask = 1 << (el_exp_bits + el_frac_bits)
-    x_exp_frac_mask = 0x7FFF
+    el_exp_bias = (1 << (mxfp_meta.element_exp_bits - 1)) - 1
+    el_exp_max_biased = el_exp_max - el_exp_bias
 
-    x = x.flatten()
-    x = x.reshape(n_blocks, B)  # [n_blocks, B]
-    x_int16 = x.view(torch.int16)
-    exp = (x_int16 & 0x7F80) >> 7  # 0-255
-    exp_max = exp.max(dim=1, keepdim=True).values  # [n_blocks, 1]
-    zero_mask = (x_int16 & x_exp_frac_mask) == 0
-    exp = exp - exp_max
-    # exp of minifloat
-    el_exp = exp + el_exp_bias
-    # whether the minifloat is subnormal
-    subnormal_mask = (el_exp == 0) & (~zero_mask)
-    underflow_mask = (el_exp < 0) | zero_mask
-    overflow_mask = el_exp > el_exp_max
-    el_exp = torch.where(underflow_mask, 0, el_exp)
-    el_exp = torch.where(overflow_mask, el_exp_max, el_exp)
+    tensor = tensor.flatten()
+    tensor = tensor.reshape(n_blocks, B)
 
-    el_frac = x.view(torch.int16) & 0x007F
-    el_frac = el_frac >> (7 - el_frac_bits)
-    # add implicit bit for subnormal minifloat
-    el_frac = torch.where(subnormal_mask, (el_implicit_bit | el_frac) >> 1, el_frac)
-    el_frac = torch.where(underflow_mask, 0, el_frac)
-    el_frac = torch.where(overflow_mask, el_frac_max, el_frac)
+    x_int32 = tensor.view(torch.int32)
+    # flush subnormal to zero
+    flush_to_zero = (x_int32 & fp32_exp_mask) == 0
+    # tensor = torch.where(flush_to_zero, 0.0, tensor)
+    # int32, [n_blocks, 1]
+    shared_exp = tensor.abs().max(dim=1, keepdim=True).values
+    shared_exp = shared_exp.log2().floor().to(torch.int32)
+    shared_exp -= el_exp_max_biased
+    shared_exp = shared_exp.clamp(sc_exp_min_biased, sc_exp_max_biased)
+    scales_uint = shared_exp + sc_exp_bias
+    scales_uint = torch.where(flush_to_zero.all(dim=1, keepdim=True), 0, scales_uint)
+    scales_uint = scales_uint.to(torch.uint8)
+    # fp32, [n_blocks, 1]
+    scales_fp = torch.exp2(shared_exp)
 
-    sign = x.view(torch.int16) & 0x8000
-    sign = sign >> (15 - (el_exp_bits + el_frac_bits))
-    sign = sign & el_sign_mask
+    minifloats = torch.where(flush_to_zero, 0.0, tensor / scales_fp)
+    elements = extract_minifloat_component(minifloats, mxfp_meta.element_meta)
+    elements = elements.view(torch.uint16)
+    elements = elements.to(torch.uint8)
 
-    el = sign | (el_exp << el_frac_bits) | el_frac
-    el = el.view(torch.uint16).to(torch.uint8)
-
-    exp_max = exp_max.clamp(0, sc_exp_max).view(torch.uint16).to(torch.uint8)
-    return exp_max, el
+    return scales_uint, elements
 
 
 def compose_mxfp_tensor(
     scales: Tensor,
     elements: Tensor,
     mxfp_meta: MXFPMeta,
-):
-    """
-    Composes a MXFP tensor from the scale and element components.
-
-    Args:
-        shared_scales (Tensor): The shared scales tensor.
-        elements (Tensor): The elements tensor.
-        mxfp_meta (MXFPMeta): The metadata for the MXFP format.
-
-    Returns:
-        Tensor: The composed MXFP tensor.
-    """
+    output_dtype: torch.dtype,
+) -> Tensor:
     assert scales.dtype == torch.uint8
     assert elements.dtype == torch.uint8
 
-    B = mxfp_meta.block_size
-    n_blocks = scales.shape[0]
-    el_exp_bits = mxfp_meta.element_exp_bits
-    el_frac_bits = mxfp_meta.element_frac_bits
-    el_frac_mask = (1 << el_frac_bits) - 1
-    el_exp_bias = (1 << (el_exp_bits - 1)) - 1
-    el_exp_frac_mask = (1 << (el_exp_bits + el_frac_bits)) - 1
+    sc_exp_bias = (1 << (mxfp_meta.scale_exp_bits - 1)) - 1
+    scales_fp = torch.exp2(scales.to(torch.int32) - sc_exp_bias)
+    minifloats = compose_minifloat_component(
+        elements.to(torch.uint16), mxfp_meta.element_meta, output_dtype=torch.float32
+    )
 
-    exp_max = scales.to(torch.uint16).view(torch.int16)
-    exp_max = exp_max.expand(-1, B)  # [n_blocks, B]
-
-    elements = elements.to(torch.int16)
-    zero_mask = (elements & el_exp_frac_mask) == 0
-    sign = elements << (15 - (el_exp_bits + el_frac_bits))
-    sign = sign & 0x8000
-
-    el_exp = (elements >> el_frac_bits) & ((1 << el_exp_bits) - 1)
-    # remove implicit bit
-    subnormal_mask = (el_exp == 0) & (~zero_mask)
-    fraction = torch.where(subnormal_mask, elements << 1, elements)
-    fraction = fraction & el_frac_mask
-    fraction = fraction << (7 - el_frac_bits)
-    el_exp = el_exp - el_exp_bias
-    exp = exp_max + el_exp
-    exp = exp << 7
-
-    dequantized = sign | exp | fraction
-    dequantized = dequantized.view(torch.bfloat16)
-    dequantized = torch.where(zero_mask, 0.0, dequantized)
-    dequantized = dequantized.reshape(n_blocks * B)
+    dequantized = minifloats * scales_fp
+    dequantized = dequantized.flatten().to(output_dtype)
     return dequantized

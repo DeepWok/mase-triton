@@ -25,36 +25,14 @@ class MXFPLinearPTQ(nn.Module):
         backend: Literal["separate", "fused"] = "fused",
         dtype: torch.dtype | None = None,
         device: torch.device | None = None,
-        w_scales: Tensor | None = None,
-        w_elements: Tensor | None = None,
-        w_tensor_meta: MXFPTensorMeta | None = None,
-        b_scales: Tensor | None = None,
-        b_elements: Tensor | None = None,
-        b_tensor_meta: MXFPTensorMeta | None = None,
     ):
         super().__init__()
         t_args = {"dtype": dtype, "device": device}
-        assert weight is None or weight.ndim == 2
+        assert weight.ndim == 2
         assert bias is None or bias.ndim == 1
+        assert bias is None or bias.shape[0] == weight.shape[0]
 
-        assert (weight is not None) ^ (
-            w_scales is not None
-            and w_elements is not None
-            and w_tensor_meta is not None
-        )
-        if (bias is not None) and (
-            b_scales is not None
-            and b_elements is not None
-            and b_tensor_meta is not None
-        ):
-            raise ValueError(
-                "Either bias or b_scales, b_elements, b_tensor_meta must be None, not both."
-            )
-        if weight is None:
-            out_features, in_features = w_tensor_meta.shape
-        else:
-            in_features, out_features = weight.shape[1], weight.shape[0]
-        assert bias is None or bias.shape[0] == out_features
+        in_features, out_features = weight.shape[1], weight.shape[0]
         self.in_features = in_features
         self.out_features = out_features
         self.x_mxfp_meta = x_mxfp_meta
@@ -71,25 +49,20 @@ class MXFPLinearPTQ(nn.Module):
         self.b_scales, self.b_elements, self.b_tensor_meta = None, None, None
 
         if "Wq" in layer_type:
-            if w_scales is None:
-                w_scales, w_elements, w_tensor_meta = MXFP_F.extract_mxfp_components(
-                    weight, block_dim=1, mxfp_meta=w_mxfp_meta
-                )
+            w_scales, w_elements, w_tensor_meta = MXFP_F.extract_mxfp_components(
+                weight, block_dim=1, mxfp_meta=w_mxfp_meta
+            )
             self.w_scales = nn.Parameter(w_scales, requires_grad=False)
             self.w_elements = nn.Parameter(w_elements, requires_grad=False)
             self.w_tensor_meta = w_tensor_meta
         else:
-            assert weight is not None
             self.weight = nn.Parameter(weight.to(**t_args), requires_grad=False)
 
         if "Bq" in layer_type:
-            if bias is not None or b_scales is not None:
-                if b_scales is None:
-                    b_scales, b_elements, b_tensor_meta = (
-                        MXFP_F.extract_mxfp_components(
-                            bias, block_dim=0, mxfp_meta=b_mxfp_meta
-                        )
-                    )
+            if isinstance(bias, Tensor):
+                b_scales, b_elements, b_tensor_meta = MXFP_F.extract_mxfp_components(
+                    bias, block_dim=0, mxfp_meta=b_mxfp_meta
+                )
                 self.b_scales = nn.Parameter(b_scales, requires_grad=False)
                 self.b_elements = nn.Parameter(b_elements, requires_grad=False)
                 self.b_tensor_meta = b_tensor_meta
@@ -167,41 +140,3 @@ class MXFPLinearPTQ(nn.Module):
                 layer_type=layer_type,
                 backend=backend,
             )
-
-    @classmethod
-    def from_quantized(
-        cls,
-        w_scales: Tensor | None,
-        w_elements: Tensor | None,
-        w_tensor_meta: MXFPTensorMeta | None,
-        bias: Tensor | None,
-        b_scales: Tensor | None,
-        b_elements: Tensor | None,
-        b_tensor_meta: MXFPTensorMeta | None,
-        x_mxfp_meta: MXFPMeta | None,
-        layer_type: Literal["XWqB", "XWqBq", "XqWqB", "XqWqBq"],
-        backend: Literal["separate", "fused"],
-    ):
-        assert (
-            w_scales is not None
-            and w_elements is not None
-            and w_tensor_meta is not None
-        )
-
-        return cls(
-            weight=None,
-            bias=bias,
-            x_mxfp_meta=x_mxfp_meta,
-            w_mxfp_meta=None,
-            b_mxfp_meta=None,
-            layer_type=layer_type,
-            backend=backend,
-            dtype=getattr(torch, w_tensor_meta.dtype),
-            device=torch.device(w_tensor_meta.device),
-            w_scales=w_scales,
-            w_elements=w_elements,
-            w_tensor_meta=w_tensor_meta,
-            b_scales=b_scales,
-            b_elements=b_elements,
-            b_tensor_meta=b_tensor_meta,
-        )

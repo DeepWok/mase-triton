@@ -32,6 +32,7 @@ def extract_mxfp_components(
     ndim = len(ori_shape)
     assert block_dim < ndim and block_dim >= -ndim
 
+    tensor = tensor.to(torch.bfloat16)
     tensor = flatten_for_quantize(tensor, block_dim)
     if device.startswith("cuda"):
         scales, elements = mxfp_kernels.extract_mxfp_components(
@@ -56,7 +57,7 @@ def compose_mxfp_tensor(
     scales,
     elements,
     tensor_meta: MXFPTensorMeta,
-    output_dtype: torch.dtype | None = None,
+    dtype: torch.dtype | None = None,
 ) -> Tensor:
     """
     Compose a tensor from MXFP components.
@@ -67,35 +68,31 @@ def compose_mxfp_tensor(
     :type elements: torch.Tensor
     :param tensor_meta: The metadata for the MXFP tensor.
     :type tensor_meta: MXFPTensorMeta
-    :param output_dtype: The desired data type of the output tensor, by default None, which uses the dtype from tensor_meta.
+    :param dtype: The desired data type of the output tensor, by default None, which uses the dtype from tensor_meta.
     :type dtype: torch.dtype, optional
 
     :returns: The dequantized tensor.
     :rtype: torch.Tensor
     """
     device = tensor_meta.device
-    output_dtype = (
-        getattr(torch, tensor_meta.dtype) if output_dtype is None else output_dtype
-    )
+    dtype = getattr(torch, tensor_meta.dtype) if dtype is None else dtype
 
-    if device.startswith("cuda"):
-        tensor = mxfp_kernels.compose_mxfp_tensor(
-            scales=scales,
-            elements=elements,
-            mxfp_meta=tensor_meta.meta,
-            output_dtype=output_dtype,
-        )
-    else:
+    if device == "cpu":
         tensor = mxfp_fake.compose_mxfp_tensor(
             scales=scales,
             elements=elements,
             mxfp_meta=tensor_meta.meta,
-            output_dtype=output_dtype,
         )
-
+    else:
+        tensor = mxfp_kernels.compose_mxfp_tensor(
+            shared_scales=scales,
+            elements=elements,
+            mxfp_meta=tensor_meta.meta,
+        )
     tensor = permute_for_dequantize(
         tensor, ori_shape=tensor_meta.shape, block_dim=tensor_meta.block_dim
     )
+    tensor = tensor.to(dtype=dtype)
     return tensor
 
 
@@ -103,7 +100,7 @@ def quantize_dequantize(
     tensor: Tensor,
     block_dim: int,
     mxfp_meta: MXFPMeta,
-    output_dtype: torch.dtype | None = None,
+    dtype: torch.dtype | None = None,
 ) -> Tensor:
     """
     Quantizes and dequantizes a tensor using the MXFP format.
@@ -114,7 +111,7 @@ def quantize_dequantize(
     :type block_dim: int
     :param mxfp_meta: The metadata for the MXFP format.
     :type mxfp_meta: MXFPMeta
-    :param output_dtype: The desired data type of the output tensor, by default None, which uses the dtype from mxfp_meta.
+    :param dtype: The desired data type of the output tensor, by default None, which uses the dtype from mxfp_meta.
 
     :returns: The dequantized tensor.
     :rtype: torch.Tensor
@@ -122,7 +119,5 @@ def quantize_dequantize(
     scales, elements, tensor_meta = extract_mxfp_components(
         tensor, block_dim, mxfp_meta
     )
-    tensor_dq = compose_mxfp_tensor(
-        scales, elements, tensor_meta, output_dtype=output_dtype
-    )
+    tensor_dq = compose_mxfp_tensor(scales, elements, tensor_meta, dtype=dtype)
     return tensor_dq
