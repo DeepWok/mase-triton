@@ -27,7 +27,7 @@ def _get_default_config_extract_minifloat_component_kernel():
     configs=_get_autotune_configs_extract_minifloat_component_kernel()
     if AutotuneManager.is_enabled()
     else _get_default_config_extract_minifloat_component_kernel(),
-    key=["exp_bits", "frac_bits", "is_finite", "round_mode", "x_dtype"],
+    key=["exp_bits", "frac_bits", "is_finite", "x_dtype"],
 )
 @triton.jit
 def _extract_minifloat_component_kernel(
@@ -37,7 +37,6 @@ def _extract_minifloat_component_kernel(
     exp_bits: tl.constexpr,
     frac_bits: tl.constexpr,
     is_finite: tl.constexpr,
-    round_mode: tl.constexpr,
     BLK: tl.constexpr,
     x_dtype: tl.constexpr,
 ):
@@ -51,7 +50,6 @@ def _extract_minifloat_component_kernel(
     y_exp_min = 0
     y_exp_min_biased = y_exp_min - y_exp_bias
     y_frac_max = (1 << frac_bits) - 1
-    frac_round_scale = 2**frac_bits
     y_nan_const = (1 << (exp_bits + frac_bits)) - 1
     y_inf_const = y_nan_const - ((1 << frac_bits) - 1)
     y_sign_const = 1 << (exp_bits + frac_bits)
@@ -68,11 +66,11 @@ def _extract_minifloat_component_kernel(
     x_int32 = x.to(tl.int32, bitcast=True)
     flush_to_zero = (x_int32 & 0x7F800000) == 0
     x = tl.where(flush_to_zero, 0.0, x)
-    x_exp = libdevice.ilogb(x)
+    x_exp = libdevice.ilogb(x)  # [-126, 127]
     x_frac = x_int32 & 0x7FFFFF
     x_frac = x_frac | 0x3F800000
     x_frac = x_frac.to(tl.float32, bitcast=True)
-
+    # this x_frac is now equivalent to the output x_frac in fake's line 28
     x_is_inf = None
     x_is_nan = None
     if not is_finite:
@@ -83,18 +81,9 @@ def _extract_minifloat_component_kernel(
     underflow = y_exp < y_exp_min_biased
     overflow = y_exp > y_exp_max_biased
     y_exp = y_exp + y_exp_bias
-    # Scale the fraction for rounding
-    # x_frac_scaled = x_frac | (frac_bits << 23)
-    if round_mode == "z":
-        y_frac = libdevice.mul_rz(x_frac, frac_round_scale)
-    elif round_mode == "n":
-        y_frac = libdevice.mul_rn(x_frac, frac_round_scale)
-    elif round_mode == "u":
-        y_frac = libdevice.mul_ru(x_frac, frac_round_scale)
-    else:
-        y_frac = libdevice.mul_rd(x_frac, frac_round_scale)
 
-    y_frac = y_frac.to(tl.int32, bitcast=True)
+    y_frac = x_frac.to(tl.int32, bitcast=True)
+    y_frac = y_frac & 0x7FFFFF
     y_frac = y_frac >> (23 - frac_bits)
     # subnormal minifloat
     y_is_subnormal = (y_exp == y_exp_min) & (y_frac != 0)
@@ -138,7 +127,6 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
             exp_bits=minifloat_meta.exp_bits,
             frac_bits=minifloat_meta.frac_bits,
             is_finite=minifloat_meta.is_finite,
-            round_mode=minifloat_meta.round_mode,
             x_dtype=TORCH_DTYPE_TO_TRITON[x.dtype],
         )
 

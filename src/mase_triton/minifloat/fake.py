@@ -9,7 +9,6 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
     y_frac_bits = minifloat_meta.frac_bits
     always_finite = minifloat_meta.is_finite
 
-    round_mode = minifloat_meta.round_mode
     y_exp_bias = (1 << (y_exp_bits - 1)) - 1  # 2^(y_exp_bits - 1) - 1
     # if always_finite: 2^y_exp_bits - 1 - bias = 2^y_exp_bits - 1 - 2^(y_exp_bits - 1) + 1 = 2^(y_exp_bits - 1)
     y_exp_max = (1 << y_exp_bits) - 1 if always_finite else (1 << y_exp_bits) - 2
@@ -36,22 +35,12 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
     overflow = y_exp > y_exp_max_biased
     y_exp = y_exp + y_exp_bias
 
-    x_frac_scaled = x_frac * (1 << y_frac_bits)
-    if round_mode == "z":
-        # truncate towards zero
-        y_frac = x_frac_scaled.view(torch.int32) >> (23 - y_frac_bits)
-        y_frac = (y_frac << (23 - y_frac_bits)).view(torch.float32)
-    elif round_mode == "n":
-        y_frac = x_frac_scaled.round()
-    elif round_mode == "u":
-        # round towards positive infinity
-        y_frac = x_frac_scaled.ceil()
-    elif round_mode == "d":
-        # round towards negative infinity
-        y_frac = x_frac_scaled.floor()
-    else:
-        raise ValueError(f"Unknown round mode: {round_mode}")
-    y_frac = y_frac.view(torch.int32) & 0x7FFFFF
+    # x_frac_scaled = x_frac * (1 << y_frac_bits)
+
+    # y_frac = x_frac_scaled.view(torch.int32) >> (23 - y_frac_bits)
+    # y_frac = (y_frac << (23 - y_frac_bits)).view(torch.float32)
+
+    y_frac = x_frac.view(torch.int32) & 0x7FFFFF
     y_frac = y_frac >> (23 - y_frac_bits)
     y_is_subnormal = (y_exp == y_exp_min) & (y_frac != 0)
     # add implicit leading 1 and shift for subnormals
