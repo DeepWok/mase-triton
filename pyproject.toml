@@ -34,6 +34,7 @@
 [tool.pytest.ini_options]
     minversion="6.0"
     testpaths=["test"]
+    norecursedirs=["test/deprecated"]
 
 [tool.hatch]
     build.dev-mode-dirs=["src"]
