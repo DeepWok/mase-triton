@@ -35,11 +35,6 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
     overflow = y_exp > y_exp_max_biased
     y_exp = y_exp + y_exp_bias
 
-    # x_frac_scaled = x_frac * (1 << y_frac_bits)
-
-    # y_frac = x_frac_scaled.view(torch.int32) >> (23 - y_frac_bits)
-    # y_frac = (y_frac << (23 - y_frac_bits)).view(torch.float32)
-
     y_frac = x_frac.view(torch.int32) & 0x7FFFFF
     y_frac = y_frac >> (23 - y_frac_bits)
     y_is_subnormal = (y_exp == y_exp_min) & (y_frac != 0)
