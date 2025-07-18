@@ -23,20 +23,28 @@ set_seed(0)
     "mxfp_format",
     [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
 def test_simulated_extract_and_compose_cpu_cuda(
-    mxfp_format: MXFPMeta, n_groups: int, seed_iter: int
+    dtype: str, mxfp_format: MXFPMeta, n_groups: int, seed_iter: int
 ):
+    dtype = getattr(torch, dtype)
     # Check the consistency of cpu and cuda implementations
     n_elements = mxfp_format.block_size * n_groups
-    w = torch.randn(n_elements, dtype=torch.float32, device="cuda") * 100.0
+    w = torch.randn(n_elements, dtype=dtype, device="cuda") * 100.0
     w_cpu = w.cpu()
     scales_cuda, elements_cuda = extract_mxfp_components(w, mxfp_meta=mxfp_format)
     w_dq_cuda = compose_mxfp_tensor(
-        scales=scales_cuda, elements=elements_cuda, mxfp_meta=mxfp_format
+        scales=scales_cuda,
+        elements=elements_cuda,
+        mxfp_meta=mxfp_format,
+        output_dtype=dtype,
     )
     scales_cpu, elements_cpu = extract_mxfp_components(w_cpu, mxfp_meta=mxfp_format)
     w_dq_cpu = compose_mxfp_tensor(
-        scales=scales_cpu, elements=elements_cpu, mxfp_meta=mxfp_format
+        scales=scales_cpu,
+        elements=elements_cpu,
+        mxfp_meta=mxfp_format,
+        output_dtype=dtype,
     )
     # check that the results are the same on CPU and GPU
     assert (scales_cuda == scales_cpu.cuda()).all()
@@ -50,13 +58,17 @@ def test_simulated_extract_and_compose_cpu_cuda(
     "mxfp_format",
     [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
 def test_simulated_extract_and_compose_normal(
-    mxfp_format: MXFPMeta, n_groups: int, device: str
+    dtype: str, mxfp_format: MXFPMeta, n_groups: int, device: str
 ):
+    dtype = getattr(torch, dtype)
     n_elements = mxfp_format.block_size * n_groups
-    w = torch.randn(n_elements, dtype=torch.float32, device=device) * 100.0
+    w = torch.randn(n_elements, dtype=dtype, device=device) * 100.0
     scales, elements = extract_mxfp_components(w, mxfp_meta=mxfp_format)
-    w_dq = compose_mxfp_tensor(scales=scales, elements=elements, mxfp_meta=mxfp_format)
+    w_dq = compose_mxfp_tensor(
+        scales=scales, elements=elements, mxfp_meta=mxfp_format, output_dtype=dtype
+    )
     avg_err = (w - w_dq).abs().mean()
     avg_err_ratio = avg_err / w.abs().mean()
     print(f"Average error ratio for {mxfp_format} format: {avg_err_ratio:.4f}")
@@ -77,7 +89,7 @@ def test_simulated_extract_and_compose_normal(
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     else:
-        assert avg_err_ratio < 0.3, (
+        assert avg_err_ratio < 0.25, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
 
@@ -88,12 +100,14 @@ def test_simulated_extract_and_compose_normal(
     "mxfp_format",
     [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
+@pytest.mark.parametrize("dtype", ["float32", "bfloat16"])
 def test_simulated_extract_and_compose_outliers(
-    mxfp_format: MXFPMeta, n_groups: int, device: str
+    dtype: str, mxfp_format: MXFPMeta, n_groups: int, device: str
 ):
+    dtype = getattr(torch, dtype)
     n_elements = mxfp_format.block_size * n_groups
 
-    w = torch.randn(n_elements, dtype=torch.float32, device=device) * 100.0
+    w = torch.randn(n_elements, dtype=dtype, device=device) * 100.0
     for i in range(n_groups):
         w[i * mxfp_format.block_size] *= 2**32
     scales, elements = extract_mxfp_components(w, mxfp_meta=mxfp_format)
@@ -101,6 +115,7 @@ def test_simulated_extract_and_compose_outliers(
         scales=scales,
         elements=elements,
         mxfp_meta=mxfp_format,
+        output_dtype=dtype,
     )
     avg_err = (w.float() - w_dq.float()).abs().mean()
     avg_err_ratio = avg_err / w.abs().mean()
@@ -130,7 +145,9 @@ def test_simulated_extract_and_compose_subnormal_input(
         0, largest_subnormal, (n_elements,), dtype=torch.int16, device=device
     ).view(torch.float32)
     scales, elements = extract_mxfp_components(w, mxfp_meta=mxfp_format)
-    w_dq = compose_mxfp_tensor(scales, elements, mxfp_meta=mxfp_format)
+    w_dq = compose_mxfp_tensor(
+        scales, elements, mxfp_meta=mxfp_format, output_dtype=torch.float32
+    )
     assert w_dq.dtype == torch.float32
     assert (w_dq == 0.0).all(), (
         "Dequantized tensor should be all zeros for subnormal values"
@@ -138,7 +155,9 @@ def test_simulated_extract_and_compose_subnormal_input(
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
-def test_mxfp4_all_normal_minifloat(device):
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
+def test_mxfp4_all_normal_minifloat(dtype: str, device: str):
+    dtype = getattr(torch, dtype)
     exp_bias = -120
     x = torch.tensor(
         [
@@ -147,7 +166,7 @@ def test_mxfp4_all_normal_minifloat(device):
             [0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5],
             [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ],
-        dtype=torch.float32,
+        dtype=dtype,
         device=device,
     ).flatten()
     x = x * (2**exp_bias)
@@ -158,12 +177,15 @@ def test_mxfp4_all_normal_minifloat(device):
         element_frac_bits=1,
     )
     scales, elements = extract_mxfp_components(x, mxfp_meta=mxfp_meta)
-    x_dq = compose_mxfp_tensor(scales=scales, elements=elements, mxfp_meta=mxfp_meta)
+    x_dq = compose_mxfp_tensor(
+        scales=scales, elements=elements, mxfp_meta=mxfp_meta, output_dtype=dtype
+    )
     assert (x == x_dq).all()
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
-def test_mxfp4_mixture_of_normal_subnormal_minifloat(device):
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
+def test_mxfp4_mixture_of_normal_subnormal_minifloat(dtype: str, device: str):
     exp_bias = -120
     x = torch.tensor(
         [
@@ -181,7 +203,12 @@ def test_mxfp4_mixture_of_normal_subnormal_minifloat(device):
         element_frac_bits=1,
     )
     scales, elements = extract_mxfp_components(x, mxfp_meta=mxfp_meta)
-    x_dq = compose_mxfp_tensor(scales=scales, elements=elements, mxfp_meta=mxfp_meta)
+    x_dq = compose_mxfp_tensor(
+        scales=scales,
+        elements=elements,
+        mxfp_meta=mxfp_meta,
+        output_dtype=torch.float32,
+    )
     assert (x == x_dq).all()
 
 

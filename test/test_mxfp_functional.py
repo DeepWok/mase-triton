@@ -44,9 +44,11 @@ def test_mxfp_components(block_dim: int):
     "mxfp_format",
     [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
-def test_quantize_dequantize_1d(mxfp_format: MXFPMeta, n_groups: int):
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
+def test_quantize_dequantize_1d(dtype: str, mxfp_format: MXFPMeta, n_groups: int):
+    dtype = getattr(torch, dtype)
     n_elements = mxfp_format.block_size * n_groups
-    w = torch.randn(n_elements, dtype=torch.float32, device="cuda") * 100.0
+    w = torch.randn(n_elements, dtype=dtype, device="cuda") * 100.0
     scales, elements, tensor_meta = extract_mxfp_components(
         w, block_dim=0, mxfp_meta=mxfp_format
     )
@@ -86,9 +88,13 @@ def test_quantize_dequantize_1d(mxfp_format: MXFPMeta, n_groups: int):
     "mxfp_format",
     [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
-def test_quantize_dequantize_1d_wrapped(mxfp_format: MXFPMeta, n_groups: int):
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
+def test_quantize_dequantize_1d_wrapped(
+    dtype: str, mxfp_format: MXFPMeta, n_groups: int
+):
+    dtype = getattr(torch, dtype)
     n_elements = mxfp_format.block_size * n_groups
-    w = torch.randn(n_elements, dtype=torch.float32, device="cuda") * 100.0
+    w = torch.randn(n_elements, dtype=dtype, device="cuda") * 100.0
     w_dq = quantize_dequantize(w, block_dim=0, mxfp_meta=mxfp_format)
     assert w_dq.shape == w.shape, (
         f"Dequantized tensor shape {w_dq.shape} does not match original shape {w.shape}."
@@ -124,9 +130,13 @@ def test_quantize_dequantize_1d_wrapped(mxfp_format: MXFPMeta, n_groups: int):
     "mxfp_format",
     [MXFP8_E4M3_fn, MXFP8_E5M2_fn, OCP_MXFP6_E2M3, OCP_MXFP6_E3M2, OCP_MXFP4_E2M1],
 )
-def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim: int):
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
+def test_quantize_dequantize_2d(
+    dtype: str, mxfp_format: MXFPMeta, n_groups: int, block_dim: int
+):
+    dtype = getattr(torch, dtype)
     n_elements = mxfp_format.block_size * n_groups * 3
-    w = torch.randn(n_elements, dtype=torch.float32, device="cuda") * 50.0
+    w = torch.randn(n_elements, dtype=dtype, device="cuda") * 50.0
 
     if block_dim % 2 == 0:
         w = w.reshape(-1, 3)
@@ -137,7 +147,10 @@ def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim:
         w, block_dim=block_dim, mxfp_meta=mxfp_format
     )
     w_dq = compose_mxfp_tensor(
-        scales=scales, elements=elements, tensor_meta=tensor_meta
+        scales=scales,
+        elements=elements,
+        tensor_meta=tensor_meta,
+        output_dtype=torch.float32,
     )
     assert w_dq.shape == w.shape, (
         f"Dequantized tensor shape {w_dq.shape} does not match original shape {w.shape}."
@@ -191,7 +204,11 @@ def test_quantize_dequantize_2d(mxfp_format: MXFPMeta, n_groups: int, block_dim:
 )
 @pytest.mark.parametrize("device", [torch.device("cuda"), torch.device("cpu")])
 @pytest.mark.parametrize("backend", ["separate"])
-def test_mxfp_matmul(x_meta: MXFPMeta, y_meta: MXFPMeta, device, backend: str):
+@pytest.mark.parametrize("dtype", ["float32", "bfloat16", "float16"])
+def test_mxfp_matmul(
+    dtype: str, x_meta: MXFPMeta, y_meta: MXFPMeta, device, backend: str
+):
+    dtype = getattr(torch, dtype)
     func_type = ""
     if x_meta is not None:
         func_type += "Xq"
@@ -202,8 +219,8 @@ def test_mxfp_matmul(x_meta: MXFPMeta, y_meta: MXFPMeta, device, backend: str):
     else:
         func_type += "W"
 
-    a = torch.randn((2, 4, 512, 256), dtype=torch.float32, device=device) * 10
-    b = torch.randn((2, 4, 256, 128), dtype=torch.float32, device=device) * 10
+    a = torch.randn((2, 4, 512, 256), dtype=dtype, device=device) * 10
+    b = torch.randn((2, 4, 256, 128), dtype=dtype, device=device) * 10
 
     y_ref = torch.matmul(a, b)
     y = mxfp_matmul(

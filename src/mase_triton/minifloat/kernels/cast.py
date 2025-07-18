@@ -4,8 +4,8 @@ from torch import Tensor
 from triton import language as tl
 from triton.language.extra import libdevice
 
-from ...autotune import AutotuneManager
 from ...dtype import TORCH_DTYPE_TO_TRITON
+from ...manager import KernelManager
 from ..meta import MinifloatMeta
 
 
@@ -97,7 +97,7 @@ def _extract_minifloat_component_core(
 
 @triton.autotune(
     configs=_get_autotune_configs_extract_minifloat_component_kernel()
-    if AutotuneManager.is_enabled()
+    if KernelManager.autotune_is_enabled()
     else _get_default_config_extract_minifloat_component_kernel(),
     key=["exp_bits", "frac_bits", "is_finite", "x_dtype"],
 )
@@ -211,9 +211,9 @@ def _compose_minifloat_component_core(
 
 @triton.autotune(
     configs=_get_autotune_configs_compose_minifloat_component_kernel()
-    if AutotuneManager.is_enabled()
+    if KernelManager.autotune_is_enabled()
     else _get_default_config_compose_minifloat_component_kernel(),
-    key=["exp_bits", "frac_bits", "is_finite", "element_dtype"],
+    key=["exp_bits", "frac_bits", "is_finite", "element_dtype", "output_dtype"],
 )
 @triton.jit
 def _compose_minifloat_component_kernel(
@@ -225,6 +225,7 @@ def _compose_minifloat_component_kernel(
     is_finite: tl.constexpr,
     BLK: tl.constexpr,
     element_dtype: tl.constexpr,
+    output_dtype: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
     x_offs = pid * BLK + tl.arange(0, BLK)
@@ -237,18 +238,19 @@ def _compose_minifloat_component_kernel(
         is_finite=is_finite,
         element_dtype=element_dtype,
     )
+    y = y.cast(output_dtype)
     tl.store(output_ptr + x_offs, y, mask=x_offs < n_elements)
 
 
 def compose_minifloat_component(
-    elements: Tensor, minifloat_meta: MinifloatMeta
+    elements: Tensor, minifloat_meta: MinifloatMeta, output_dtype: torch.dtype
 ) -> Tensor:
     elements = elements.contiguous()
     n_elements = elements.numel()
     device = elements.device
 
     x_dtype = TORCH_DTYPE_TO_TRITON[elements.dtype]
-    output = torch.empty_like(elements, dtype=torch.float32)
+    output = torch.empty_like(elements, dtype=output_dtype)
 
     def grid(meta):
         return (triton.cdiv(n_elements, meta["BLK"]),)
@@ -262,6 +264,7 @@ def compose_minifloat_component(
             frac_bits=minifloat_meta.frac_bits,
             is_finite=minifloat_meta.is_finite,
             element_dtype=x_dtype,
+            output_dtype=TORCH_DTYPE_TO_TRITON[output_dtype],
         )
 
     return output

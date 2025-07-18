@@ -2,6 +2,7 @@ import torch
 from torch import Tensor
 
 from .. import fake as fp_fake
+from .. import kernels as fp_kernels
 from ..meta import MinifloatMeta, MinifloatTensorMeta
 
 
@@ -25,8 +26,7 @@ def extract_minifloat_component(
     tensor = tensor.to(torch.float32)
 
     if device.startswith("cuda"):
-        # TODO: Implement triton kernel for minifloat extraction
-        element = fp_fake.extract_minifloat_component(tensor, minifloat_meta)
+        element = fp_kernels.extract_minifloat_component(tensor, minifloat_meta)
     else:
         element = fp_fake.extract_minifloat_component(tensor, minifloat_meta)
     tensor_meta = MinifloatTensorMeta(
@@ -36,7 +36,9 @@ def extract_minifloat_component(
 
 
 def compose_minifloat_component(
-    element: Tensor, tensor_meta: MinifloatTensorMeta, dtype: torch.dtype | None = None
+    element: Tensor,
+    tensor_meta: MinifloatTensorMeta,
+    output_dtype: torch.dtype | None = None,
 ) -> Tensor:
     """
     Compose a tensor from minifloat components.
@@ -51,21 +53,25 @@ def compose_minifloat_component(
     :rtype: torch.Tensor
     """
     device = tensor_meta.device
-    dtype = getattr(torch, tensor_meta.dtype) if dtype is None else dtype
+    output_dtype = (
+        getattr(torch, tensor_meta.dtype) if output_dtype is None else output_dtype
+    )
 
     if device.startswith("cuda"):
-        # TODO: Implement triton kernel for minifloat composition
-        tensor = fp_fake.compose_minifloat_component(element, tensor_meta.meta)
+        tensor = fp_kernels.compose_minifloat_component(
+            element, tensor_meta.meta, output_dtype=output_dtype
+        )
     else:
-        tensor = fp_fake.compose_minifloat_component(element, tensor_meta.meta)
-    tensor = tensor.to(dtype)
+        tensor = fp_fake.compose_minifloat_component(
+            element, tensor_meta.meta, output_dtype=output_dtype
+        )
     return tensor
 
 
 def quantize_dequantize(
     tensor: Tensor,
     minifloat_meta: MinifloatMeta,
-    dtype: torch.dtype | None = None,
+    output_dtype: torch.dtype | None = None,
 ) -> Tensor:
     """
     Quantize and dequantize a tensor using minifloat format.
@@ -74,10 +80,10 @@ def quantize_dequantize(
     :type tensor: torch.Tensor
     :param minifloat_meta: The metadata for the minifloat format.
     :type minifloat_meta: MinifloatMeta
-    :param dtype: The desired data type of the output tensor, by default None, which uses the dtype from tensor_meta.
+    :param output_dtype: The desired data type of the output tensor, by default None, which uses the dtype from tensor_meta.
     :type dtype: torch.dtype, optional
     :returns: The dequantized tensor.
     :rtype: torch.Tensor
     """
     element, tensor_meta = extract_minifloat_component(tensor, minifloat_meta)
-    return compose_minifloat_component(element, tensor_meta, dtype=dtype)
+    return compose_minifloat_component(element, tensor_meta, output_dtype=output_dtype)

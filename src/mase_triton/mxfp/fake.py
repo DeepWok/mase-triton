@@ -9,7 +9,7 @@ from .meta import MXFPMeta
 
 
 def extract_mxfp_components(tensor: Tensor, mxfp_meta: MXFPMeta):
-    assert tensor.dtype == torch.float32
+    tensor = tensor.float()
     B = mxfp_meta.block_size
     assert tensor.numel() % B == 0
 
@@ -44,7 +44,7 @@ def extract_mxfp_components(tensor: Tensor, mxfp_meta: MXFPMeta):
     shared_exp -= el_exp_max_biased
     shared_exp = shared_exp.clamp(sc_exp_min_biased, sc_exp_max_biased)
     scales_uint = shared_exp + sc_exp_bias
-    scales_uint = torch.where(flush_to_zero, 0, scales_uint)
+    scales_uint = torch.where(flush_to_zero.all(dim=1, keepdim=True), 0, scales_uint)
     scales_uint = scales_uint.to(torch.uint8)
     # fp32, [n_blocks, 1]
     scales_fp = torch.exp2(shared_exp)
@@ -58,7 +58,10 @@ def extract_mxfp_components(tensor: Tensor, mxfp_meta: MXFPMeta):
 
 
 def compose_mxfp_tensor(
-    scales: Tensor, elements: Tensor, mxfp_meta: MXFPMeta
+    scales: Tensor,
+    elements: Tensor,
+    mxfp_meta: MXFPMeta,
+    output_dtype: torch.dtype,
 ) -> Tensor:
     assert scales.dtype == torch.uint8
     assert elements.dtype == torch.uint8
@@ -66,9 +69,9 @@ def compose_mxfp_tensor(
     sc_exp_bias = (1 << (mxfp_meta.scale_exp_bits - 1)) - 1
     scales_fp = torch.exp2(scales.to(torch.int32) - sc_exp_bias)
     minifloats = compose_minifloat_component(
-        elements.to(torch.uint16), mxfp_meta.element_meta
+        elements.to(torch.uint16), mxfp_meta.element_meta, output_dtype=torch.float32
     )
 
     dequantized = minifloats * scales_fp
-    dequantized = dequantized.flatten()
+    dequantized = dequantized.flatten().to(output_dtype)
     return dequantized

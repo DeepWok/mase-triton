@@ -66,7 +66,9 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
 
 
 def compose_minifloat_component(
-    elements: Tensor, minifloat_meta: MinifloatMeta
+    elements: Tensor,
+    minifloat_meta: MinifloatMeta,
+    output_dtype: torch.dtype,
 ) -> Tensor:
     exp_bits = minifloat_meta.exp_bits
     frac_bits = minifloat_meta.frac_bits
@@ -108,5 +110,5 @@ def compose_minifloat_component(
         y = torch.where(y_is_nan, fp32_nan_const, y)
     y = torch.where(is_zero, 0, y)
     y = y_sign | y
-    y = y.view(torch.float32)
+    y = y.view(torch.float32).to(output_dtype)
     return y

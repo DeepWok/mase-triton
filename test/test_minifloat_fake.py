@@ -63,13 +63,16 @@ def test_fp4_compose(device: str):
     # fmt: on
     x_fp4_ref = [minifloat_bin_to_float(x, exp_bits=2, frac_bits=1) for x in x_raw]
     x = torch.tensor(x_raw, dtype=torch.uint16, device=device)
-    x_fp4 = compose_minifloat_component(x, minifloat_meta=FP4_E2M1_fn)
+    x_fp4 = compose_minifloat_component(
+        x, minifloat_meta=FP4_E2M1_fn, output_dtype=torch.float32
+    )
     x_fp4_ref = torch.tensor(x_fp4_ref, dtype=torch.float32, device=device)
     assert (x_fp4 == x_fp4_ref).all(), f"Expected {x_fp4_ref}, \ngot {x_fp4}"
 
 
 @pytest.mark.parametrize("n_elements", [1024])
 @pytest.mark.parametrize("device", ["cuda", "cpu"])
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
 @pytest.mark.parametrize(
     "meta",
     [
@@ -81,11 +84,12 @@ def test_fp4_compose(device: str):
     ],
 )
 def test_extract_compose_builtin_meta(
-    meta: MinifloatMeta, device: str, n_elements: int
+    meta: MinifloatMeta, dtype: str, device: str, n_elements: int
 ):
-    x = torch.randn(n_elements, dtype=torch.float32, device=device)
+    dtype = getattr(torch, dtype)
+    x = torch.randn(n_elements, dtype=dtype, device=device)
     x_q = extract_minifloat_component(x, minifloat_meta=meta)
-    x_dq = compose_minifloat_component(x_q, minifloat_meta=meta)
+    x_dq = compose_minifloat_component(x_q, minifloat_meta=meta, output_dtype=dtype)
     err = (x - x_dq).abs().mean()
     err_ratio = (err / x.abs().mean()).item()
     print(f"Average error ratio for {meta}: {err_ratio:.4f}")
@@ -113,7 +117,9 @@ def test_extract_compose_builtin_meta_saturate(
 ):
     x = torch.ones(n_elements, dtype=torch.float32, device=device) * meta.max_normal * 2
     x_q = extract_minifloat_component(x, minifloat_meta=meta)
-    x_dq = compose_minifloat_component(x_q, minifloat_meta=meta)
+    x_dq = compose_minifloat_component(
+        x_q, minifloat_meta=meta, output_dtype=torch.float32
+    )
     assert (x_dq == meta.max_normal).all()
 
 
@@ -121,12 +127,15 @@ def test_extract_compose_builtin_meta_saturate(
 @pytest.mark.parametrize("device", ["cuda", "cpu"])
 @pytest.mark.parametrize("is_finite", [True, False])
 @pytest.mark.parametrize("exp_frac_bits", [(2, 1), (2, 3), (3, 2), (4, 3), (5, 2)])
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
 def test_extract_compose_random_meta(
+    dtype: str,
     exp_frac_bits: tuple[int, int],
     is_finite: bool,
     device: str,
     n_elements: int,
 ):
+    dtype = getattr(torch, dtype)
     if exp_frac_bits in [(2, 1), (2, 3)] and not is_finite:
         pytest.skip("FP4_E2M1 is always finite, skipping test for non-finite case")
     meta = MinifloatMeta(
@@ -134,9 +143,9 @@ def test_extract_compose_random_meta(
         frac_bits=exp_frac_bits[1],
         is_finite=is_finite,
     )
-    x = torch.randn(n_elements, dtype=torch.float32, device=device) * 2.5
+    x = torch.randn(n_elements, dtype=dtype, device=device) * 2.5
     x_q = extract_minifloat_component(x, minifloat_meta=meta)
-    x_dq = compose_minifloat_component(x_q, minifloat_meta=meta)
+    x_dq = compose_minifloat_component(x_q, minifloat_meta=meta, output_dtype=dtype)
     error = (x - x_dq).abs().mean()
     error_ratio = (error / x.abs().mean()).item()
     print(f"Average error ratio for {meta}: {error_ratio:.4f}")
