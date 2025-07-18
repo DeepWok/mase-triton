@@ -81,10 +81,10 @@ def test_compose_component_builtin_meta(
     dtype = getattr(torch, dtype)
     x = torch.randn(n_elements, dtype=dtype, device=device)
     x_q = minifloat_kernels.extract_minifloat_component(x, minifloat_meta=meta)
-    x_dq = minifloat_fake.compose_minifloat_component(
+    x_dq = minifloat_kernels.compose_minifloat_component(
         x_q, minifloat_meta=meta, output_dtype=dtype
     )
-    x_dq_ref = minifloat_kernels.compose_minifloat_component(
+    x_dq_ref = minifloat_fake.compose_minifloat_component(
         x_q, minifloat_meta=meta, output_dtype=dtype
     )
     assert x_dq_ref.dtype == x_dq.dtype
@@ -187,6 +187,6 @@ def test_autotune_cast(enable: bool, n_elements: int, dtype: str, meta: Minifloa
 
 if __name__ == "__main__":
     # test_extract_component_builtin_meta(FP6_E2M3_fn, 1024)
-    # test_compose_component_builtin_meta(FP6_E2M3_fn, 1024)
+    test_compose_component_builtin_meta("float16", FP6_E2M3_fn, 1024)
     # test_fp4_compose()
-    test_autotune_cast(True, FP6_E2M3_fn)
+    # test_autotune_cast(True, FP6_E2M3_fn)

@@ -162,5 +162,5 @@ def test_extract_compose_random_meta(
 
 
 if __name__ == "__main__":
-    # test_fp4_compose("cpu")
-    test_extract_compose_builtin_meta_saturate(FP4_E2M1_fn, "cpu", 8)
+    test_fp4_compose("cpu")
+    # test_extract_compose_builtin_meta_saturate(FP4_E2M1_fn, "cpu", 8)

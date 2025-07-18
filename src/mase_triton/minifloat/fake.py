@@ -77,10 +77,6 @@ def compose_minifloat_component(
     x_sign_mask = 1 << (exp_bits + frac_bits)
     x_frac_mask = (1 << frac_bits) - 1
     x_exp_bias = (1 << (exp_bits - 1)) - 1
-    x_subnormal_lead_bit_mask = (1 << (frac_bits - 1)) - 1
-    fp32_exp_bias = 127
-    fp32_nan_const = (1 << (exp_bits + frac_bits)) - 1
-    fp32_inf_const = fp32_nan_const - ((1 << frac_bits) - 1)
 
     x_exp_bias = (1 << (exp_bits - 1)) - 1
 
@@ -99,16 +95,18 @@ def compose_minifloat_component(
         y_is_inf = y_is_not_finite & (x_frac == 0)
         y_is_nan = y_is_not_finite & (x_frac != 0)
 
-    y_exp = (x_exp - x_exp_bias + fp32_exp_bias) << 23
-    y_frac = torch.where(
-        is_subnormal, (x_frac & x_subnormal_lead_bit_mask) << 1, x_frac
-    )
-    y_frac = y_frac << (23 - frac_bits)
-    y = y_exp | y_frac
+    y_exp = x_exp - x_exp_bias
+    y_exp = torch.where(is_subnormal, y_exp + 1, y_exp)
+    y_exp = torch.exp2(y_exp)
+    y_frac = x_frac.to(torch.float32)
+    y_frac = y_frac / (1 << frac_bits)
+    y_frac = torch.where(is_subnormal, y_frac, y_frac + 1.0)
+    y = y_exp * y_frac
+
     if not always_finite:
-        y = torch.where(y_is_inf, fp32_inf_const, y)
-        y = torch.where(y_is_nan, fp32_nan_const, y)
-    y = torch.where(is_zero, 0, y)
-    y = y_sign | y
-    y = y.view(torch.float32).to(output_dtype)
+        y = torch.where(y_is_inf, float("inf"), y)
+        y = torch.where(y_is_nan, float("nan"), y)
+    y = torch.where(is_zero, 0.0, y)
+    y = torch.where(y_sign != 0, -y, y)
+    y = y.to(output_dtype)
     return y

@@ -175,10 +175,6 @@ def _compose_minifloat_component_core(
     x_sign_mask = 1 << (exp_bits + frac_bits)
     x_frac_mask = (1 << frac_bits) - 1
     x_exp_bias = (1 << (exp_bits - 1)) - 1
-    x_subnormal_lead_bit_mask = (1 << (frac_bits - 1)) - 1
-    fp32_exp_bias = 127
-    fp32_nan_const = (1 << (exp_bits + frac_bits)) - 1
-    fp32_inf_const = fp32_nan_const - ((1 << frac_bits) - 1)
 
     elements = elements.to(tl.int32)
 
@@ -195,17 +191,19 @@ def _compose_minifloat_component_core(
         y_is_inf = y_is_not_finite & (x_frac == 0)
         y_is_nan = y_is_not_finite & (x_frac != 0)
 
-    y_exp = (x_exp - x_exp_bias + fp32_exp_bias) << 23
+    y_exp = x_exp - x_exp_bias
+    y_exp = tl.where(is_subnormal, y_exp + 1, y_exp)
+    y_exp = tl.exp2(y_exp.to(tl.float32))
+    y_frac = x_frac.to(tl.float32)
+    y_frac = y_frac / (1 << frac_bits)
+    y_frac = tl.where(is_subnormal, y_frac, y_frac + 1.0)
+    y = y_exp * y_frac
 
-    y_frac = tl.where(is_subnormal, (x_frac & x_subnormal_lead_bit_mask) << 1, x_frac)
-    y_frac = y_frac << (23 - frac_bits)
-    y = y_exp | y_frac
     if not is_finite:
-        y = tl.where(y_is_inf, fp32_inf_const, y)
-        y = tl.where(y_is_nan, fp32_nan_const, y)
-    y = tl.where(is_zero, 0, y)
-    y = y_sign | y
-    y = y.to(tl.float32, bitcast=True)
+        y = tl.where(y_is_nan, float("inf"), y)
+        y = tl.where(y_is_inf, float("nan"), y)
+    y = tl.where(is_zero, 0.0, y)
+    y = tl.where(y_sign != 0, -y, y)
     return y
 
 
