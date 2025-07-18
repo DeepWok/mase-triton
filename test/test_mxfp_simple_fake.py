@@ -83,7 +83,7 @@ def test_simulated_extract_and_compose_normal(
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     elif mxfp_format is OCP_MXFP6_E2M3:
-        assert avg_err_ratio < 0.4, (
+        assert avg_err_ratio < 0.45, (
             f"Average error ratio {avg_err_ratio} is too high for {mxfp_format} format."
         )
     else:

@@ -21,9 +21,7 @@ set_ipdb_breakpoint()
 set_seed(42)
 
 
-pytest.mark.parametrize("n_elements", [1024])
-
-
+@pytest.mark.parametrize("n_elements", [1024])
 @pytest.mark.parametrize("device", ["cuda", "cpu"])
 @pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
 @pytest.mark.parametrize(
@@ -41,9 +39,11 @@ def test_extract_compose_builtin_meta(
 ):
     dtype = getattr(torch, dtype)
     x = torch.randn(n_elements, dtype=dtype, device=device)
-    x_q = minifloat_functional.extract_minifloat_component(x, minifloat_meta=meta)
+    x_q, tensor_meta = minifloat_functional.extract_minifloat_component(
+        x, minifloat_meta=meta
+    )
     x_dq = minifloat_functional.compose_minifloat_component(
-        x_q, minifloat_meta=meta, output_dtype=dtype
+        x_q, tensor_meta=tensor_meta, output_dtype=dtype
     )
     err = (x - x_dq).abs().mean()
     err_ratio = (err / x.abs().mean()).item()
@@ -62,6 +62,7 @@ def test_extract_compose_builtin_meta(
         raise ValueError(f"Unknown minifloat meta: {meta}")
 
 
+@pytest.mark.parametrize("n_elements", [1024])
 @pytest.mark.parametrize("device", ["cuda", "cpu"])
 @pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
 @pytest.mark.parametrize(

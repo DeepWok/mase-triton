@@ -1,8 +1,16 @@
 import pytest
 import torch
 
+from mase_triton.mxfp.functional import extract_mxfp_components, quantize_dequantize
 from mase_triton.mxfp.layers import MXFPLinearPTQ
-from mase_triton.mxfp.meta import MXFP8_E4M3_fn, MXFPMeta
+from mase_triton.mxfp.meta import (
+    OCP_MXFP4_E2M1,
+    OCP_MXFP6_E2M3,
+    OCP_MXFP6_E3M2,
+    MXFP8_E4M3_fn,
+    MXFP8_E5M2_fn,
+    MXFPMeta,
+)
 from mase_triton.mxfp.utils import ChangeDtypeError, devices_equal
 from mase_triton.utils.train_utils import set_seed
 
@@ -11,12 +19,32 @@ set_seed(42)
 
 @pytest.mark.parametrize("MNK", [(128, 512, 1024)])
 @pytest.mark.parametrize("backend", ["separate"])
-@pytest.mark.parametrize("x_meta", [MXFP8_E4M3_fn, None])
-@pytest.mark.parametrize("w_meta", [MXFP8_E4M3_fn, None])
+@pytest.mark.parametrize(
+    "x_meta",
+    [
+        MXFP8_E4M3_fn,
+        MXFP8_E5M2_fn,
+        OCP_MXFP6_E2M3,
+        OCP_MXFP6_E3M2,
+        OCP_MXFP4_E2M1,
+        None,
+    ],
+)
+@pytest.mark.parametrize(
+    "w_meta",
+    [
+        MXFP8_E4M3_fn,
+        MXFP8_E5M2_fn,
+        OCP_MXFP6_E2M3,
+        OCP_MXFP6_E3M2,
+        OCP_MXFP4_E2M1,
+        None,
+    ],
+)
 @pytest.mark.parametrize("b_meta", [MXFP8_E4M3_fn, None])
 @pytest.mark.parametrize("bias", [True, False])
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
-def test_mxfp_linear_ptq(
+def test_mxfp_linear_ptq_from_linear(
     MNK,
     backend: str,
     x_meta: MXFPMeta,
@@ -74,7 +102,103 @@ def test_mxfp_linear_ptq(
     print(
         f"Average error ratio for {layer_type} with {x_meta}, {w_meta}, {b_meta}: {avg_err_ratio:.4f}"
     )
-    assert avg_err_ratio < 0.2
+    if x_meta is OCP_MXFP4_E2M1 or w_meta is OCP_MXFP4_E2M1 or b_meta is OCP_MXFP4_E2M1:
+        assert avg_err_ratio < 0.4
+    else:
+        assert avg_err_ratio < 0.2
+
+
+@pytest.mark.parametrize("MNK", [(128, 512, 1024)])
+@pytest.mark.parametrize("backend", ["separate"])
+@pytest.mark.parametrize("x_meta", [None])
+@pytest.mark.parametrize(
+    "w_meta",
+    [
+        MXFP8_E4M3_fn,
+        MXFP8_E5M2_fn,
+        OCP_MXFP6_E3M2,
+        OCP_MXFP6_E2M3,
+        OCP_MXFP4_E2M1,
+    ],
+)
+@pytest.mark.parametrize("b_meta", [OCP_MXFP4_E2M1, None])
+@pytest.mark.parametrize("bias", [True, False])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
+@torch.no_grad()
+def test_mxfp_linear_ptq_from_quantized(
+    MNK,
+    backend: str,
+    x_meta: MXFPMeta,
+    w_meta: MXFPMeta,
+    b_meta: MXFPMeta,
+    bias: bool,
+    dtype: torch.dtype,
+):
+    M, N, K = MNK
+    layer_type = ""
+    if x_meta is None:
+        layer_type += "X"
+    else:
+        layer_type += "Xq"
+    if w_meta is None:
+        layer_type += "W"
+    else:
+        layer_type += "Wq"
+    if b_meta is None:
+        layer_type += "B"
+    else:
+        layer_type += "Bq"
+
+    assert "Wq" in layer_type
+
+    if not bias:
+        b_meta = None
+
+    in_features = K
+    out_features = N
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+    fc_ref = torch.nn.Linear(
+        in_features=in_features,
+        out_features=out_features,
+        bias=bias,
+        device=device,
+        dtype=dtype,
+    )
+    fc_ref.to(device=device)
+    fc_from_linear = MXFPLinearPTQ.from_linear(
+        layer=fc_ref,
+        x_mxfp_meta=x_meta,
+        w_mxfp_meta=w_meta,
+        b_mxfp_meta=b_meta,
+        layer_type=layer_type,
+        backend=backend,
+    )
+    w_scales, w_elements, w_tensor_meta = extract_mxfp_components(
+        tensor=fc_ref.weight, block_dim=1, mxfp_meta=w_meta
+    )
+    b_scales, b_elements, b_tensor_meta = None, None, None
+    if bias and b_meta is not None:
+        b_scales, b_elements, b_tensor_meta = extract_mxfp_components(
+            tensor=fc_ref.bias, block_dim=0, mxfp_meta=b_meta
+        )
+    fc_from_pre_quantized = MXFPLinearPTQ.from_quantized(
+        w_scales=w_scales,
+        w_elements=w_elements,
+        w_tensor_meta=w_tensor_meta,
+        bias=fc_from_linear.bias,
+        b_scales=b_scales,
+        b_elements=b_elements,
+        b_tensor_meta=b_tensor_meta,
+        x_mxfp_meta=x_meta,
+        layer_type=layer_type,
+        backend=backend,
+    )
+
+    x = torch.randn(M, K, device=device, dtype=dtype) * 3
+    y_from_linear = fc_from_linear(x)
+    y_from_pre_quantized = fc_from_pre_quantized(x)
+    assert torch.allclose(y_from_linear, y_from_pre_quantized)
 
 
 @pytest.mark.parametrize("has_bias", [True, False])
@@ -147,20 +271,12 @@ def test_mxfp_linear_to(
 
 
 if __name__ == "__main__":
-    # test_mxfp_linear_ptq(
-    # backend="separate",
-    # x_meta=None,
-    # w_meta=MXFP8_E4M3_fn,
-    # b_meta=None,
-    # bias=False,
-    # dtype=torch.bfloat16,
-    # )
-    test_mxfp_linear_to(
-        has_bias=True,
-        ori_device="cpu",
-        new_device="cuda",
-        new_dtype=torch.float16,
-        x_meta=MXFP8_E4M3_fn,
+    test_mxfp_linear_ptq_from_quantized(
+        MNK=(128, 512, 1024),
+        backend="separate",
+        x_meta=None,
         w_meta=MXFP8_E4M3_fn,
-        b_meta=MXFP8_E4M3_fn,
+        b_meta=None,
+        bias=False,
+        dtype=torch.float32,
     )
