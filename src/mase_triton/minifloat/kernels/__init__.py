@@ -1,1 +1,1 @@
-from .cast import extract_minifloat_component
+from .cast import compose_minifloat_component, extract_minifloat_component

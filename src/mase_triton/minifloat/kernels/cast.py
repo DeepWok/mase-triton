@@ -20,24 +20,15 @@ def _get_autotune_configs_extract_minifloat_component_kernel():
 
 
 def _get_default_config_extract_minifloat_component_kernel():
-    return [triton.Config({"BLK": 128}, num_stages=4)]
+    return [triton.Config({"BLK": 256}, num_stages=4)]
 
 
-@triton.autotune(
-    configs=_get_autotune_configs_extract_minifloat_component_kernel()
-    if AutotuneManager.is_enabled()
-    else _get_default_config_extract_minifloat_component_kernel(),
-    key=["exp_bits", "frac_bits", "is_finite", "x_dtype"],
-)
 @triton.jit
-def _extract_minifloat_component_kernel(
-    x_ptr,
-    element_ptr,
-    n_elements: int,
+def _extract_minifloat_component_core(
+    x,
     exp_bits: tl.constexpr,
     frac_bits: tl.constexpr,
     is_finite: tl.constexpr,
-    BLK: tl.constexpr,
     x_dtype: tl.constexpr,
 ):
     # constants
@@ -54,10 +45,6 @@ def _extract_minifloat_component_kernel(
     y_inf_const = y_nan_const - ((1 << frac_bits) - 1)
     y_sign_const = 1 << (exp_bits + frac_bits)
 
-    pid = tl.program_id(axis=0)
-    x_offs = pid * BLK + tl.arange(0, BLK)
-
-    x = tl.load(x_ptr + x_offs, mask=x_offs < n_elements, other=0.0)
     x = x.to(tl.float32)
 
     y_sign = x < 0
@@ -105,7 +92,37 @@ def _extract_minifloat_component_kernel(
         y = tl.where(x_is_inf, y_inf_const, y)
     y = tl.where(flush_to_zero, 0, y)
     y = y.to(tl.uint16)
+    return y
 
+
+@triton.autotune(
+    configs=_get_autotune_configs_extract_minifloat_component_kernel()
+    if AutotuneManager.is_enabled()
+    else _get_default_config_extract_minifloat_component_kernel(),
+    key=["exp_bits", "frac_bits", "is_finite", "x_dtype"],
+)
+@triton.jit
+def _extract_minifloat_component_kernel(
+    x_ptr,
+    element_ptr,
+    n_elements: int,
+    exp_bits: tl.constexpr,
+    frac_bits: tl.constexpr,
+    is_finite: tl.constexpr,
+    BLK: tl.constexpr,
+    x_dtype: tl.constexpr,
+):
+    pid = tl.program_id(axis=0)
+    x_offs = pid * BLK + tl.arange(0, BLK)
+
+    x = tl.load(x_ptr + x_offs, mask=x_offs < n_elements, other=0.0)
+    y = _extract_minifloat_component_core(
+        x,
+        exp_bits=exp_bits,
+        frac_bits=frac_bits,
+        is_finite=is_finite,
+        x_dtype=x_dtype,
+    )
     tl.store(element_ptr + x_offs, y, mask=x_offs < n_elements)
 
 
@@ -131,3 +148,120 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
         )
 
     return elements
+
+
+def _get_autotune_configs_compose_minifloat_component_kernel():
+    block_sizes = [128, 256, 512, 1024]
+    stages = [4, 5]
+    configs = []
+    for bs in block_sizes:
+        for s in stages:
+            configs.append(triton.Config({"BLK": bs}, num_stages=s))
+    return configs
+
+
+def _get_default_config_compose_minifloat_component_kernel():
+    return [triton.Config({"BLK": 512}, num_stages=4)]
+
+
+@triton.jit
+def _compose_minifloat_component_core(
+    elements,
+    exp_bits: tl.constexpr,
+    frac_bits: tl.constexpr,
+    is_finite: tl.constexpr,
+    element_dtype: tl.constexpr,
+):
+    x_sign_mask = 1 << (exp_bits + frac_bits)
+    x_frac_mask = (1 << frac_bits) - 1
+    x_exp_bias = (1 << (exp_bits - 1)) - 1
+    x_subnormal_lead_bit_mask = (1 << (frac_bits - 1)) - 1
+    fp32_exp_bias = 127
+    fp32_nan_const = (1 << (exp_bits + frac_bits)) - 1
+    fp32_inf_const = fp32_nan_const - ((1 << frac_bits) - 1)
+
+    elements = elements.to(tl.int32)
+
+    y_sign = (elements & x_sign_mask) << (31 - (exp_bits + frac_bits))
+
+    elements = elements & 0x7FFF
+    x_exp = (elements >> frac_bits) & ((1 << exp_bits) - 1)
+    x_frac = elements & x_frac_mask
+    is_subnormal = (x_exp == 0) & (x_frac != 0)
+    is_zero = (x_exp == 0) & (x_frac == 0)
+
+    if not is_finite:
+        y_is_not_finite = x_exp == ((1 << exp_bits) - 1)
+        y_is_inf = y_is_not_finite & (x_frac == 0)
+        y_is_nan = y_is_not_finite & (x_frac != 0)
+
+    y_exp = (x_exp - x_exp_bias + fp32_exp_bias) << 23
+
+    y_frac = tl.where(is_subnormal, (x_frac & x_subnormal_lead_bit_mask) << 1, x_frac)
+    y_frac = y_frac << (23 - frac_bits)
+    y = y_exp | y_frac
+    if not is_finite:
+        y = tl.where(y_is_inf, fp32_inf_const, y)
+        y = tl.where(y_is_nan, fp32_nan_const, y)
+    y = tl.where(is_zero, 0, y)
+    y = y_sign | y
+    y = y.to(tl.float32, bitcast=True)
+    return y
+
+
+@triton.autotune(
+    configs=_get_autotune_configs_compose_minifloat_component_kernel()
+    if AutotuneManager.is_enabled()
+    else _get_default_config_compose_minifloat_component_kernel(),
+    key=["exp_bits", "frac_bits", "is_finite", "element_dtype"],
+)
+@triton.jit
+def _compose_minifloat_component_kernel(
+    elements_ptr,
+    output_ptr,
+    n_elements: int,
+    exp_bits: tl.constexpr,
+    frac_bits: tl.constexpr,
+    is_finite: tl.constexpr,
+    BLK: tl.constexpr,
+    element_dtype: tl.constexpr,
+):
+    pid = tl.program_id(axis=0)
+    x_offs = pid * BLK + tl.arange(0, BLK)
+
+    elements = tl.load(elements_ptr + x_offs, mask=x_offs < n_elements, other=0)
+    y = _compose_minifloat_component_core(
+        elements,
+        exp_bits=exp_bits,
+        frac_bits=frac_bits,
+        is_finite=is_finite,
+        element_dtype=element_dtype,
+    )
+    tl.store(output_ptr + x_offs, y, mask=x_offs < n_elements)
+
+
+def compose_minifloat_component(
+    elements: Tensor, minifloat_meta: MinifloatMeta
+) -> Tensor:
+    elements = elements.contiguous()
+    n_elements = elements.numel()
+    device = elements.device
+
+    x_dtype = TORCH_DTYPE_TO_TRITON[elements.dtype]
+    output = torch.empty_like(elements, dtype=torch.float32)
+
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLK"]),)
+
+    with torch.cuda.device(device.index):
+        _compose_minifloat_component_kernel[grid](
+            elements,
+            output,
+            n_elements=n_elements,
+            exp_bits=minifloat_meta.exp_bits,
+            frac_bits=minifloat_meta.frac_bits,
+            is_finite=minifloat_meta.is_finite,
+            element_dtype=x_dtype,
+        )
+
+    return output

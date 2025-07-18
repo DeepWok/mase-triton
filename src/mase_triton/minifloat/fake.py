@@ -68,39 +68,45 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
 def compose_minifloat_component(
     elements: Tensor, minifloat_meta: MinifloatMeta
 ) -> Tensor:
-    x_exp_bits = minifloat_meta.exp_bits
-    x_frac_bits = minifloat_meta.frac_bits
+    exp_bits = minifloat_meta.exp_bits
+    frac_bits = minifloat_meta.frac_bits
     always_finite = minifloat_meta.is_finite
 
+    x_sign_mask = 1 << (exp_bits + frac_bits)
+    x_frac_mask = (1 << frac_bits) - 1
+    x_exp_bias = (1 << (exp_bits - 1)) - 1
+    x_subnormal_lead_bit_mask = (1 << (frac_bits - 1)) - 1
     fp32_exp_bias = 127
+    fp32_nan_const = (1 << (exp_bits + frac_bits)) - 1
+    fp32_inf_const = fp32_nan_const - ((1 << frac_bits) - 1)
 
-    x_exp_bias = (1 << (x_exp_bits - 1)) - 1
+    x_exp_bias = (1 << (exp_bits - 1)) - 1
 
     assert elements.dtype == torch.uint16
     elements = elements.to(torch.int32)
-    y_sign = (elements & (1 << (x_exp_bits + x_frac_bits))) != 0
+    y_sign = (elements & x_sign_mask) << (31 - (exp_bits + frac_bits))
 
-    elements = (elements & 0x7FFF).to(torch.int32)
-    x_exp = (elements >> x_frac_bits) & ((1 << x_exp_bits) - 1)
-    x_frac = elements & ((1 << x_frac_bits) - 1)
+    elements = elements & 0x7FFF
+    x_exp = (elements >> frac_bits) & ((1 << exp_bits) - 1)
+    x_frac = elements & x_frac_mask
     is_subnormal = (x_exp == 0) & (x_frac != 0)
     is_zero = (x_exp == 0) & (x_frac == 0)
 
     if not always_finite:
-        y_is_not_finite = x_exp == ((1 << x_exp_bits) - 1)
+        y_is_not_finite = x_exp == ((1 << exp_bits) - 1)
         y_is_inf = y_is_not_finite & (x_frac == 0)
         y_is_nan = y_is_not_finite & (x_frac != 0)
 
     y_exp = (x_exp - x_exp_bias + fp32_exp_bias) << 23
     y_frac = torch.where(
-        is_subnormal, (x_frac & ((1 << (x_frac_bits - 1)) - 1)) << 1, x_frac
+        is_subnormal, (x_frac & x_subnormal_lead_bit_mask) << 1, x_frac
     )
-    y_frac = y_frac << (23 - x_frac_bits)
+    y_frac = y_frac << (23 - frac_bits)
     y = y_exp | y_frac
-    y = y.view(torch.float32)
-    y = torch.where(y_sign, -y, y)
     if not always_finite:
-        y = torch.where(y_is_inf, float("inf"), y)
-        y = torch.where(y_is_nan, float("nan"), y)
-    y = torch.where(is_zero, 0.0, y)
+        y = torch.where(y_is_inf, fp32_inf_const, y)
+        y = torch.where(y_is_nan, fp32_nan_const, y)
+    y = torch.where(is_zero, 0, y)
+    y = y_sign | y
+    y = y.view(torch.float32)
     return y
