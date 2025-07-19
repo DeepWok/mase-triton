@@ -114,6 +114,10 @@ class MXFPLinearPTQ(nn.Module):
                 raise ChangeDtypeError(
                     f"Changing dtype of {t_name} from {ori_type} to {t.dtype} is not allowed."
                 )
+        if self.w_tensor_meta is not None and self.w_scales is not None:
+            self.w_tensor_meta = self.w_tensor_meta.create(device=self.w_scales.device)
+        if self.b_tensor_meta is not None and self.b_scales is not None:
+            self.b_tensor_meta = self.b_tensor_meta.create(device=self.b_scales.device)
         return r_val
 
     @torch.no_grad()

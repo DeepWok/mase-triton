@@ -1,6 +1,7 @@
 import torch
 from torch import Tensor
 
+from ...utils.meta import device_str, dtype_str, shape_tuple
 from .. import fake as fp_fake
 from .. import kernels as fp_kernels
 from ..meta import MinifloatMeta, MinifloatTensorMeta
@@ -19,9 +20,9 @@ def extract_minifloat_component(
     :returns: The extracted element (uint16 tensor) and tensor metadata.
     :rtype: tuple[torch.Tensor, MinifloatTensorMeta]
     """
-    device = str(tensor.device)
-    ori_shape = tuple(tensor.shape)
-    ori_dtype = str(tensor.dtype).removeprefix("torch.")
+    device = device_str(tensor.device)
+    ori_shape = shape_tuple(tensor.shape)
+    ori_dtype = dtype_str(tensor.dtype)
 
     tensor = tensor.to(torch.float32)
 
