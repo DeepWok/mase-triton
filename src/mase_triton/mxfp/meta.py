@@ -1,8 +1,10 @@
 import functools
 from dataclasses import dataclass
-from typing import Literal
 
-from ..minifloat.meta import MinifloatMeta, MinifloatTensorMeta
+import torch
+
+from ..minifloat.meta import MinifloatMeta
+from ..utils.meta import device_str, dtype_str, shape_tuple
 
 
 @dataclass(frozen=True)
@@ -39,13 +41,39 @@ class MXFPMeta:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class MXFPTensorMeta:
     device: str
     dtype: str
     shape: tuple[int, ...]
     block_dim: int
     meta: MXFPMeta
+
+    def __post_init__(self):
+        super().__setattr__("device", device_str(self.device))
+        super().__setattr__("dtype", dtype_str(self.dtype))
+        super().__setattr__("shape", shape_tuple(self.shape))
+
+    def create(
+        self,
+        device: str | torch.device | None = None,
+        dtype: str | torch.dtype | None = None,
+        shape: tuple[int, ...] | torch.Size | None = None,
+        block_dim: int | None = None,
+        meta: MXFPMeta | None = None,
+    ) -> "MXFPTensorMeta":
+        device = self.device if device is None else device_str(device)
+        dtype = self.dtype if dtype is None else dtype_str(dtype)
+        shape = self.shape if shape is None else shape_tuple(shape)
+        block_dim = self.block_dim if block_dim is None else block_dim
+        meta = self.meta if meta is None else meta
+        return MXFPTensorMeta(
+            device=device,
+            dtype=dtype,
+            shape=shape,
+            block_dim=block_dim,
+            meta=meta,
+        )
 
 
 MXFP8_E4M3_fn = MXFPMeta(

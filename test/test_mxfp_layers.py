@@ -12,6 +12,7 @@ from mase_triton.mxfp.meta import (
     MXFPMeta,
 )
 from mase_triton.mxfp.utils import ChangeDtypeError, devices_equal
+from mase_triton.utils.meta import device_str, dtype_str, shape_tuple
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)
@@ -268,6 +269,86 @@ def test_mxfp_linear_to(
     if fc2.b_elements is not None:
         assert devices_equal(fc2.b_elements.device, torch.device(new_device))
         assert fc2.b_elements.dtype == b_el_ori_dtype
+
+
+@pytest.mark.parametrize("MNK", [(128, 128, 128)])
+@pytest.mark.parametrize("backend", ["separate"])
+@pytest.mark.parametrize("x_meta", [None])
+@pytest.mark.parametrize("w_meta", [MXFP8_E4M3_fn, None])
+@pytest.mark.parametrize("b_meta", [MXFP8_E4M3_fn, None])
+@pytest.mark.parametrize("bias", [True, False])
+@pytest.mark.parametrize("src_device", [torch.device("cpu"), torch.device("cuda:0")])
+@pytest.mark.parametrize("dst_device", [torch.device("cpu"), torch.device("cuda:0")])
+def test_mxfp_linear_ptq_to(
+    MNK,
+    backend: str,
+    x_meta: MXFPMeta,
+    w_meta: MXFPMeta,
+    b_meta: MXFPMeta,
+    bias: bool,
+    src_device: str,
+    dst_device: str,
+):
+    M, N, K = MNK
+    layer_type = ""
+    if x_meta is None:
+        layer_type += "X"
+    else:
+        layer_type += "Xq"
+    if w_meta is None:
+        layer_type += "W"
+    else:
+        layer_type += "Wq"
+    if b_meta is None:
+        layer_type += "B"
+    else:
+        layer_type += "Bq"
+
+    if not bias:
+        b_meta = None
+
+    in_features = K
+    out_features = N
+
+    fc_ref = torch.nn.Linear(
+        in_features=in_features,
+        out_features=out_features,
+        bias=bias,
+        device=src_device,
+    )
+    fc_mxfp = MXFPLinearPTQ.from_linear(
+        layer=fc_ref,
+        x_mxfp_meta=x_meta,
+        w_mxfp_meta=w_meta,
+        b_mxfp_meta=b_meta,
+        layer_type=layer_type,
+        backend=backend,
+    )
+    if fc_mxfp.w_scales is not None:
+        assert device_str(fc_mxfp.w_scales.device) == device_str(src_device)
+    if fc_mxfp.w_elements is not None:
+        assert device_str(fc_mxfp.w_elements.device) == device_str(src_device)
+    if fc_mxfp.b_scales is not None:
+        assert device_str(fc_mxfp.b_scales.device) == device_str(src_device)
+    if fc_mxfp.b_elements is not None:
+        assert device_str(fc_mxfp.b_elements.device) == device_str(src_device)
+    if fc_mxfp.b_tensor_meta is not None:
+        assert device_str(fc_mxfp.b_tensor_meta.device) == device_str(src_device)
+
+    fc_mxfp.to(device=dst_device)
+
+    if fc_mxfp.w_scales is not None:
+        assert device_str(fc_mxfp.w_scales.device) == device_str(dst_device)
+    if fc_mxfp.w_elements is not None:
+        assert device_str(fc_mxfp.w_elements.device) == device_str(dst_device)
+    if fc_mxfp.w_tensor_meta is not None:
+        assert fc_mxfp.w_tensor_meta.device == device_str(dst_device)
+    if fc_mxfp.b_scales is not None:
+        assert device_str(fc_mxfp.b_scales.device) == device_str(dst_device)
+    if fc_mxfp.b_elements is not None:
+        assert device_str(fc_mxfp.b_elements.device) == device_str(dst_device)
+    if fc_mxfp.b_tensor_meta is not None:
+        assert fc_mxfp.b_tensor_meta.device == device_str(dst_device)
 
 
 if __name__ == "__main__":

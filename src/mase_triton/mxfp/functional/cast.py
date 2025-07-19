@@ -1,6 +1,7 @@
 import torch
 from torch import Tensor
 
+from ...utils.meta import device_str, dtype_str, shape_tuple
 from .. import fake as mxfp_fake
 from .. import kernels as mxfp_kernels
 from ..helpers import flatten_for_quantize, permute_for_dequantize
@@ -26,9 +27,9 @@ def extract_mxfp_components(
     :returns: The extracted scales, elements, and tensor metadata.
     :rtype: tuple[torch.Tensor, torch.Tensor, MXFPTensorMeta]
     """
-    device = str(tensor.device)
-    ori_shape = tuple(tensor.shape)
-    ori_dtype = str(tensor.dtype).removeprefix("torch.")
+    device = device_str(tensor.device)
+    ori_shape = shape_tuple(tensor.shape)
+    ori_dtype = dtype_str(tensor.dtype)
     ndim = len(ori_shape)
     assert block_dim < ndim and block_dim >= -ndim
 
