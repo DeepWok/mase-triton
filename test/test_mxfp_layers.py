@@ -11,8 +11,8 @@ from mase_triton.mxfp.meta import (
     MXFP8_E5M2_fn,
     MXFPMeta,
 )
-from mase_triton.mxfp.utils import ChangeDtypeError, devices_equal
 from mase_triton.utils.meta import device_str, dtype_str, shape_tuple
+from mase_triton.utils.qlayer import ChangeDtypeError, devices_equal
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)
