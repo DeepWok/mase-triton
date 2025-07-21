@@ -46,6 +46,15 @@ pip install mase-triton
         - `mxfp_matmul`: functional matrix multiplication with MXFP support.
     - [`layers`](/src/mase_triton/mxfp/layers.py)
         - `MXFPLinearPTQ`: Linear layer with MXFP support for post-training quantization (no back propagation support).
+- Minifloat: Simulate minifloat formats on CPU & GPU using PyTorch & Triton.
+    - [`functional`](/src/mase_triton/minifloat/functional/__init__.py)
+        - `extract_minifloat_component`: Extract minifloat components from a tensor.
+        - `compose_minifloat_component`: Compose minifloat components back to a tensor.
+        - `quantize_dequantize`: Quantize and dequantize tensors using minifloat format.
+        - `minifloat_linear`: functional linear operation with minifloat support.
+        - `minifloat_matmul`: functional matrix multiplication with minifloat support.
+    - [`layers`](/src/mase_triton/minifloat/layers.py)
+        - `MinifloatLinearPTQ`: Linear layer with minifloat support for post-training quantization (no back propagation support).
 
 
 ## Dev
