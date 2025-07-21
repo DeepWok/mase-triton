@@ -11,8 +11,8 @@ from mase_triton.minifloat.meta import (
     FP8_E5M2_fn,
     MinifloatMeta,
 )
-from mase_triton.minifloat.utils import ChangeDtypeError, devices_equal
 from mase_triton.utils.meta import device_str
+from mase_triton.utils.qlayer import ChangeDtypeError, devices_equal
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)

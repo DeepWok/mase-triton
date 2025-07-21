@@ -3,9 +3,9 @@ from typing import Literal
 import torch
 from torch import Tensor, nn
 
+from ..utils.qlayer import ChangeDtypeError
 from . import functional as MXFP_F
 from .meta import MXFPMeta, MXFPTensorMeta
-from .utils import ChangeDtypeError
 
 
 class MXFPLinearPTQ(nn.Module):

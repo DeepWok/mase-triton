@@ -3,9 +3,9 @@ from typing import Literal
 import torch
 from torch import Tensor, nn
 
+from ..utils.qlayer import ChangeDtypeError
 from . import functional as MinifloatF
 from .meta import MinifloatMeta, MinifloatTensorMeta
-from .utils import ChangeDtypeError
 
 
 class MinifloatLinearPTQ(nn.Module):
