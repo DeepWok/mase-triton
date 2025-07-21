@@ -61,7 +61,6 @@ def test_random_bitflip_forward_fully_activated():
     )
 
 
-@torch.no_grad()
 def helper_random_bitflip_forward_fully_activated(
     input_dtypes: tuple[torch.dtype],
     s_exp_halves_frac_halves: tuple[tuple[float, float]],
@@ -100,14 +99,15 @@ def helper_random_bitflip_forward_fully_activated(
             frac_halves = RBFunctions.find_nearest_prob_n_halves(frac_p)
             seed_exp, seed_frac = 42, 42
             while True:
-                out, seed_exp, seed_frac = RBFunctions.random_bitflip_fn(
-                    x,
-                    exp_halves=exp_halves,
-                    frac_halves=frac_halves,
-                    seed_exp=seed_exp,
-                    seed_frac=seed_frac,
-                    zero_out_threshold=None,
-                )
+                with torch.no_grad():
+                    out, seed_exp, seed_frac = RBFunctions.random_bitflip_fn(
+                        x,
+                        exp_halves=exp_halves,
+                        frac_halves=frac_halves,
+                        seed_exp=seed_exp,
+                        seed_frac=seed_frac,
+                        zero_out_threshold=None,
+                    )
                 assert out.dtype == input_dtype
                 assert out.shape == x.shape
                 find_bitflip = not torch.equal(x, out)
