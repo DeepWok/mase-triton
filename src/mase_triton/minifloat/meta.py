@@ -1,4 +1,5 @@
 import functools
+import re
 from dataclasses import dataclass
 
 import torch
@@ -86,6 +87,39 @@ class MinifloatMeta:
     def min_subnormal(self) -> float:
         return _calc_min_subnormal(self.exp_bits, self.frac_bits)
 
+    @classmethod
+    def from_string(cls, config: str) -> "MinifloatMeta":
+        """
+        Parse strings like:
+        - FP_E4M3           → finite=True
+        - FP_E4M3_fn        → finite=True
+        - FP_E4M3_inf       → finite=False
+
+        Returns:
+            MinifloatMeta
+        """
+        pattern = r"FP_E(?P<exp>\d+)M(?P<frac>\d+)(?:_(?P<flag>fn|inf))?$"
+        match = re.fullmatch(pattern, config)
+        
+        if not match:
+            raise ValueError(
+                f"Invalid MinifloatMeta string: '{config}'. "
+                "Expected format: FP_E<exp>M<frac>[_fn|_inf]"
+            )
+
+        exp_bits = int(match.group("exp"))
+        frac_bits = int(match.group("frac"))
+        flag = match.group("flag")
+
+        is_finite = True if flag is None or flag == "fn" else False
+        tag = config
+
+        return cls(
+            exp_bits=exp_bits, 
+            frac_bits=frac_bits, 
+            is_finite=is_finite, 
+            tag=tag
+        )
 
 # fmt: off
 FP8_E4M3_fn = MinifloatMeta(exp_bits=4, frac_bits=3, is_finite=True, tag="FP8_E4M3_fn")

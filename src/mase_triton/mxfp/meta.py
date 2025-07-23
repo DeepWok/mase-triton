@@ -31,6 +31,45 @@ class MXFPMeta:
             f"Legal values are: {legal_element_exp_frac_bits}."
         )
 
+    @classmethod
+    def from_string(cls, config: str) -> "MXFPMeta":
+        """
+        Parse strings like:
+        - MXFP_E4M3_B32_S8
+        - MXFP_E4M3_B32_S8_fn
+        - MXFP_E4M3_B32_S8_inf
+
+        Format:
+            MXFP_E<exp>M<frac>_B<block>_S<scale>[_fn|_inf]
+
+        Returns:
+            MXFPMeta instance
+        """
+        import re
+        pattern = r"MXFP_E(?P<exp>\d+)M(?P<frac>\d+)_B(?P<block>\d+)_S(?P<scale>\d+)(?:_(?P<finite>fn|inf))?$"
+        match = re.fullmatch(pattern, config, flags=re.IGNORECASE)
+        if not match:
+            raise ValueError(
+                f"Invalid MXFPMeta string: {config}. "
+                "Expected format: MXFP_E<exp>M<frac>_B<block>_S<scale>[_fn|_inf]"
+            )
+
+        element_exp_bits = int(match.group("exp"))
+        element_frac_bits = int(match.group("frac"))
+        block_size = int(match.group("block"))
+        scale_exp_bits = int(match.group("scale"))
+        finite_flag = match.group("finite")
+        element_is_finite = True if finite_flag is None or finite_flag.lower() == "fn" else False
+
+        return cls(
+            block_size=block_size,
+            scale_exp_bits=scale_exp_bits,
+            element_exp_bits=element_exp_bits,
+            element_frac_bits=element_frac_bits,
+            element_is_finite=element_is_finite,
+            tag=config,
+        )
+
     @functools.cached_property
     def element_meta(self) -> MinifloatMeta:
         """Returns the metadata for the element (Minifloat) part of the MXFP format."""
