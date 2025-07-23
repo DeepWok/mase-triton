@@ -1,4 +1,5 @@
 import functools
+import re
 from dataclasses import dataclass
 
 import torch
@@ -45,7 +46,6 @@ class MXFPMeta:
         Returns:
             MXFPMeta instance
         """
-        import re
         pattern = r"MXFP_E(?P<exp>\d+)M(?P<frac>\d+)_B(?P<block>\d+)_S(?P<scale>\d+)(?:_(?P<finite>fn|inf))?$"
         match = re.fullmatch(pattern, config, flags=re.IGNORECASE)
         if not match:
