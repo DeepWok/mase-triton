@@ -29,6 +29,7 @@ def _extract_minifloat_component_core(
     exp_bits: tl.constexpr,
     frac_bits: tl.constexpr,
     is_finite: tl.constexpr,
+    round_mode: tl.constexpr,
     x_dtype: tl.constexpr,
 ):
     # constants
@@ -71,7 +72,23 @@ def _extract_minifloat_component_core(
 
     y_frac = x_frac.to(tl.int32, bitcast=True)
     y_frac = y_frac & 0x7FFFFF
-    y_frac = y_frac >> (23 - frac_bits)
+
+    if round_mode == "rz":
+        # truncate
+        y_frac = y_frac >> (23 - frac_bits)
+    else:
+        # round
+        y_frac_fp = (y_frac >> 8).to(tl.float32)
+        div = 1 << (15 - frac_bits)
+        y_frac_fp = y_frac_fp / div
+        if round_mode == "ru":
+            y_frac_fp = libdevice.ceil(y_frac_fp)
+        elif round_mode == "rd":
+            y_frac_fp = libdevice.floor(y_frac_fp)
+        else:
+            y_frac_fp = libdevice.round(y_frac_fp)
+        y_frac = y_frac_fp.to(tl.int32)
+
     # subnormal minifloat
     y_is_subnormal = (y_exp == y_exp_min) & (y_frac != 0)
     y_frac = tl.where(y_is_subnormal, (y_frac | (1 << frac_bits)) >> 1, y_frac)
@@ -99,7 +116,7 @@ def _extract_minifloat_component_core(
     configs=_get_autotune_configs_extract_minifloat_component_kernel()
     if KernelManager.autotune_is_enabled()
     else _get_default_config_extract_minifloat_component_kernel(),
-    key=["exp_bits", "frac_bits", "is_finite", "x_dtype"],
+    key=["exp_bits", "frac_bits", "is_finite", "round_mode", "x_dtype"],
 )
 @triton.jit
 def _extract_minifloat_component_kernel(
@@ -109,6 +126,7 @@ def _extract_minifloat_component_kernel(
     exp_bits: tl.constexpr,
     frac_bits: tl.constexpr,
     is_finite: tl.constexpr,
+    round_mode: tl.constexpr,
     BLK: tl.constexpr,
     x_dtype: tl.constexpr,
 ):
@@ -121,6 +139,7 @@ def _extract_minifloat_component_kernel(
         exp_bits=exp_bits,
         frac_bits=frac_bits,
         is_finite=is_finite,
+        round_mode=round_mode,
         x_dtype=x_dtype,
     )
     tl.store(element_ptr + x_offs, y, mask=x_offs < n_elements)
@@ -144,6 +163,7 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
             exp_bits=minifloat_meta.exp_bits,
             frac_bits=minifloat_meta.frac_bits,
             is_finite=minifloat_meta.is_finite,
+            round_mode=minifloat_meta.round_mode,
             x_dtype=TORCH_DTYPE_TO_TRITON[x.dtype],
         )
 

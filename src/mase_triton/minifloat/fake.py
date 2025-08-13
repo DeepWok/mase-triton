@@ -8,6 +8,7 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
     y_exp_bits = minifloat_meta.exp_bits
     y_frac_bits = minifloat_meta.frac_bits
     always_finite = minifloat_meta.is_finite
+    round_mode = minifloat_meta.round_mode
 
     y_exp_bias = (1 << (y_exp_bits - 1)) - 1  # 2^(y_exp_bits - 1) - 1
     # if always_finite: 2^y_exp_bits - 1 - bias = 2^y_exp_bits - 1 - 2^(y_exp_bits - 1) + 1 = 2^(y_exp_bits - 1)
@@ -36,7 +37,24 @@ def extract_minifloat_component(x: Tensor, minifloat_meta: MinifloatMeta) -> Ten
     y_exp = y_exp + y_exp_bias
 
     y_frac = x_frac.view(torch.int32) & 0x7FFFFF
-    y_frac = y_frac >> (23 - y_frac_bits)
+
+    if round_mode == "rz":
+        # truncation
+        y_frac = y_frac >> (23 - y_frac_bits)
+    else:
+        y_frac = (y_frac >> 8).float()
+        div = 1 << (15 - y_frac_bits)
+        y_frac = y_frac / div
+        if round_mode == "ru":
+            y_frac = y_frac.ceil()
+        elif round_mode == "rd":
+            y_frac = y_frac.floor()
+        elif round_mode == "rn":
+            y_frac = y_frac.round()
+        else:
+            raise ValueError(f"Unknown rounding mode: {round_mode}")
+        y_frac = y_frac.to(torch.int32)
+
     y_is_subnormal = (y_exp == y_exp_min) & (y_frac != 0)
     # add implicit leading 1 and shift for subnormals
     y_frac = torch.where(y_is_subnormal, (y_frac | (1 << y_frac_bits)) >> 1, y_frac)

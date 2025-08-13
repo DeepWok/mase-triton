@@ -175,6 +175,8 @@ def test_mxfp4_all_normal_minifloat(dtype: str, device: str):
         scale_exp_bits=8,
         element_exp_bits=2,
         element_frac_bits=1,
+        element_is_finite=True,
+        round_mode="rn",
     )
     scales, elements = extract_mxfp_components(x, mxfp_meta=mxfp_meta)
     x_dq = compose_mxfp_tensor(
@@ -201,6 +203,8 @@ def test_mxfp4_mixture_of_normal_subnormal_minifloat(dtype: str, device: str):
         scale_exp_bits=8,
         element_exp_bits=2,
         element_frac_bits=1,
+        element_is_finite=True,
+        round_mode="rn",
     )
     scales, elements = extract_mxfp_components(x, mxfp_meta=mxfp_meta)
     x_dq = compose_mxfp_tensor(

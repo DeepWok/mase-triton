@@ -1,5 +1,6 @@
 import functools
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 
@@ -13,7 +14,8 @@ class MXFPMeta:
     scale_exp_bits: int
     element_exp_bits: int
     element_frac_bits: int
-    element_is_finite: bool = True
+    element_is_finite: bool
+    round_mode: Literal["rn", "ru", "rd", "rz"]
     tag: str = ""
 
     def __post_init__(self):
@@ -38,6 +40,7 @@ class MXFPMeta:
             exp_bits=self.element_exp_bits,
             frac_bits=self.element_frac_bits,
             is_finite=self.element_is_finite,
+            round_mode=self.round_mode,
         )
 
 
@@ -82,6 +85,7 @@ MXFP8_E4M3_fn = MXFPMeta(
     element_exp_bits=4,
     element_frac_bits=3,
     element_is_finite=True,
+    round_mode="rn",
     tag="MXFP8_E4M3_fn",
 )
 MXFP8_E5M2_fn = MXFPMeta(
@@ -90,6 +94,7 @@ MXFP8_E5M2_fn = MXFPMeta(
     element_exp_bits=5,
     element_frac_bits=2,
     element_is_finite=True,
+    round_mode="rn",
     tag="MXFP8_E5M2_fn",
 )
 OCP_MXFP6_E2M3 = MXFPMeta(
@@ -98,11 +103,13 @@ OCP_MXFP6_E2M3 = MXFPMeta(
     element_exp_bits=2,
     element_frac_bits=3,
     element_is_finite=True,
+    round_mode="rn",
     tag="OCP_MXFP6_E2M3",
 )
 OCP_MXFP6_E3M2 = MXFPMeta(
     block_size=32,
     scale_exp_bits=8,
+    round_mode="rn",
     element_exp_bits=3,
     element_frac_bits=2,
     element_is_finite=True,
@@ -114,5 +121,6 @@ OCP_MXFP4_E2M1 = MXFPMeta(
     element_exp_bits=2,
     element_frac_bits=1,
     element_is_finite=True,
+    round_mode="rn",
     tag="OCP_MXFP4_E2M1",
 )

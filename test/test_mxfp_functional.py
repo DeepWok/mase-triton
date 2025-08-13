@@ -205,8 +205,14 @@ def test_quantize_dequantize_2d(
 @pytest.mark.parametrize("device", [torch.device("cuda"), torch.device("cpu")])
 @pytest.mark.parametrize("backend", ["separate"])
 @pytest.mark.parametrize("dtype", ["float32", "bfloat16", "float16"])
+@pytest.mark.parametrize("problem_size", [(128, 512, 1024)])
 def test_mxfp_matmul(
-    dtype: str, x_meta: MXFPMeta, y_meta: MXFPMeta, device, backend: str
+    dtype: str,
+    x_meta: MXFPMeta,
+    y_meta: MXFPMeta,
+    device,
+    backend: str,
+    problem_size: tuple[int],
 ):
     dtype = getattr(torch, dtype)
     func_type = ""
@@ -219,8 +225,9 @@ def test_mxfp_matmul(
     else:
         func_type += "W"
 
-    a = torch.randn((2, 4, 512, 256), dtype=dtype, device=device) * 10
-    b = torch.randn((2, 4, 256, 128), dtype=dtype, device=device) * 10
+    m, n, k = problem_size
+    a = torch.randn((2, 4, m, k), dtype=dtype, device=device) * 5
+    b = torch.randn((2, 4, k, n), dtype=dtype, device=device) * 3
 
     y_ref = torch.matmul(a, b)
     y = mxfp_matmul(
@@ -232,8 +239,11 @@ def test_mxfp_matmul(
     )
     avg_err = (y - y_ref).abs().mean()
     avg_err_ratio = avg_err / y_ref.abs().mean()
+    x_meta_tag = x_meta.tag if x_meta else "None"
+    y_meta_tag = y_meta.tag if y_meta else "None"
+    problem_size_str = ("(problem_size: " + str(problem_size) + ")").ljust(40)
     print(
-        f"Average error ratio for {func_type} with {x_meta} and {y_meta}: {avg_err_ratio:.4f}"
+        f"Average error ratio for {func_type.ljust(6)} with {x_meta_tag.ljust(16)} and {y_meta_tag.ljust(16)} {problem_size_str}: {avg_err_ratio:.4f}"
     )
     if x_meta is None and y_meta is None:
         assert avg_err_ratio == 0

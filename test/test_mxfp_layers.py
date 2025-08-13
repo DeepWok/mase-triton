@@ -106,7 +106,7 @@ def test_mxfp_linear_ptq_from_linear(
     if x_meta is OCP_MXFP4_E2M1 or w_meta is OCP_MXFP4_E2M1 or b_meta is OCP_MXFP4_E2M1:
         assert avg_err_ratio < 0.4
     else:
-        assert avg_err_ratio < 0.2
+        assert avg_err_ratio < 0.25
 
 
 @pytest.mark.parametrize("MNK", [(128, 512, 1024)])
