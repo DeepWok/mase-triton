@@ -17,8 +17,8 @@ def _find_block_max(x: Tensor, block_size: int) -> Tensor:
     n_blocks = x.numel() // B
 
     x = x.view(n_blocks, B)
-    group_max = x.abs().max(dim=1, keepdim=True).values
-    return group_max
+    block_max = x.abs().max(dim=1, keepdim=True).values
+    return block_max
 
 
 def _get_default_config_extract_mxfp_components_kernel():
@@ -47,6 +47,7 @@ def _get_autotune_configs_extract_mxfp_components_kernel():
         "el_exp_bits",
         "el_frac_bits",
         "el_is_finite",
+        "round_mode",
         "x_dtype",
     ],
 )
@@ -63,6 +64,7 @@ def _extract_mxfp_components_kernel(
     el_exp_bits: tl.constexpr,
     el_frac_bits: tl.constexpr,
     el_is_finite: tl.constexpr,
+    round_mode: tl.constexpr,
     BLK: tl.constexpr,
     x_dtype: tl.constexpr,
 ):
@@ -112,6 +114,7 @@ def _extract_mxfp_components_kernel(
         exp_bits=el_exp_bits,
         frac_bits=el_frac_bits,
         is_finite=el_is_finite,
+        round_mode=round_mode,
         x_dtype=tl.float32,
     )
     elements = elements.to(tl.uint8)
@@ -150,6 +153,7 @@ def extract_mxfp_components(x: Tensor, mxfp_meta: MXFPMeta) -> tuple[Tensor, Ten
             el_exp_bits=mxfp_meta.element_exp_bits,
             el_frac_bits=mxfp_meta.element_frac_bits,
             el_is_finite=mxfp_meta.element_is_finite,
+            round_mode=mxfp_meta.round_mode,
             x_dtype=TORCH_DTYPE_TO_TRITON[x.dtype],
         )
 

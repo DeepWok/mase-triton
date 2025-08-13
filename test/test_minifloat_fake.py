@@ -142,6 +142,7 @@ def test_extract_compose_random_meta(
         exp_bits=exp_frac_bits[0],
         frac_bits=exp_frac_bits[1],
         is_finite=is_finite,
+        round_mode="rn",
     )
     x = torch.randn(n_elements, dtype=dtype, device=device) * 2.5
     x_q = extract_minifloat_component(x, minifloat_meta=meta)
@@ -162,5 +163,8 @@ def test_extract_compose_random_meta(
 
 
 if __name__ == "__main__":
-    test_fp4_compose("cpu")
+    # test_fp4_compose("cpu")
     # test_extract_compose_builtin_meta_saturate(FP4_E2M1_fn, "cpu", 8)
+    test_extract_compose_builtin_meta(
+        meta=FP6_E2M3_fn, dtype="float32", device="cuda", n_elements=1024
+    )

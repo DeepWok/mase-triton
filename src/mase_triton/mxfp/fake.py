@@ -8,7 +8,9 @@ from ..minifloat.fake import (
 from .meta import MXFPMeta
 
 
-def extract_mxfp_components(tensor: Tensor, mxfp_meta: MXFPMeta):
+def extract_mxfp_components(
+    tensor: Tensor, mxfp_meta: MXFPMeta
+) -> tuple[Tensor, Tensor]:
     tensor = tensor.float()
     B = mxfp_meta.block_size
     assert tensor.numel() % B == 0

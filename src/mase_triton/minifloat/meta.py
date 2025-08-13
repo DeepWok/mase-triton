@@ -1,5 +1,6 @@
 import functools
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 
@@ -59,6 +60,7 @@ class MinifloatMeta:
     exp_bits: int
     frac_bits: int
     is_finite: bool
+    round_mode: Literal["rn", "rd", "ru", "rz"]
     tag: str = ""
 
     def __post_init__(self):
@@ -88,11 +90,11 @@ class MinifloatMeta:
 
 
 # fmt: off
-FP8_E4M3_fn = MinifloatMeta(exp_bits=4, frac_bits=3, is_finite=True, tag="FP8_E4M3_fn")
-FP8_E5M2_fn = MinifloatMeta(exp_bits=5, frac_bits=2, is_finite=True, tag="FP8_E5M2_fn")
-FP6_E2M3_fn = MinifloatMeta(exp_bits=2, frac_bits=3, is_finite=True, tag="FP6_E2M3_fn")
-FP6_E3M2_fn = MinifloatMeta(exp_bits=3, frac_bits=2, is_finite=True, tag="FP6_E3M2_fn")
-FP4_E2M1_fn = MinifloatMeta(exp_bits=2, frac_bits=1, is_finite=True, tag="FP4_E2M1_fn")
+FP8_E4M3_fn = MinifloatMeta(exp_bits=4, frac_bits=3, is_finite=True, round_mode="rn", tag="FP8_E4M3_fn")
+FP8_E5M2_fn = MinifloatMeta(exp_bits=5, frac_bits=2, is_finite=True, round_mode="rn", tag="FP8_E5M2_fn")
+FP6_E2M3_fn = MinifloatMeta(exp_bits=2, frac_bits=3, is_finite=True, round_mode="rn", tag="FP6_E2M3_fn")
+FP6_E3M2_fn = MinifloatMeta(exp_bits=3, frac_bits=2, is_finite=True, round_mode="rn", tag="FP6_E3M2_fn")
+FP4_E2M1_fn = MinifloatMeta(exp_bits=2, frac_bits=1, is_finite=True, round_mode="rn", tag="FP4_E2M1_fn")
 # fmt: on
 
 
