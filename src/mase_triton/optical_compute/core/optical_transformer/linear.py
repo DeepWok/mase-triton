@@ -335,7 +335,102 @@ def _ot_qlinear_fn_cpu(
     q_seed: int,
     skip_quantize: bool = False,
 ) -> tuple[Tensor, int]:
-    raise NotImplementedError("CPU kernel is not implemented")
+    """CPU implementation of the optical transformer quantized linear function."""
+
+    def _cpu_noisy_quantize(
+        tensor: Tensor,
+        min_val: float,
+        max_val: float,
+        quant_levels: int,
+        lut_min: float | None = None,
+        quant_mode: str = "det",
+        seed: int = 0,
+    ) -> Tensor:
+        """CPU implementation of noisy quantization."""
+        # Clamp values to [min_val, max_val]
+        quantized = torch.clamp(tensor, min_val, max_val)
+
+        # Normalize to [0, 1]
+        range_val = max_val - min_val
+        eps = 1e-8
+        quantized = (quantized - min_val) / (range_val + eps)
+
+        # Scale to [0, quant_levels-1]
+        quantized = quantized * (quant_levels - 1)
+
+        # Apply quantization
+        if quant_mode == "det":
+            # Deterministic: round to nearest integer
+            quantized = torch.round(quantized)
+        else:
+            # Random: add noise then round
+            # Set random seed for reproducibility
+            torch.manual_seed(seed)
+            noise = torch.rand_like(quantized) - 0.5
+            quantized = torch.round(quantized + noise)
+
+        # Scale back to original range
+        quantized = quantized / (quant_levels - 1)
+        quantized = quantized * range_val + min_val
+
+        # Apply LUT min if enabled
+        if lut_min is not None:
+            # For positive values: if 0 < x < lut_min * max_val, set to lut_min * max_val
+            threshold_pos = lut_min * max_val
+            mask_pos = (quantized > 0.0) & (quantized < threshold_pos)
+            quantized = torch.where(mask_pos, threshold_pos, quantized)
+
+            # For negative values: if -lut_min * |min_val| < x < 0, set to -lut_min * |min_val|
+            threshold_neg = -lut_min * abs(min_val)
+            mask_neg = (quantized < 0.0) & (quantized > threshold_neg)
+            quantized = torch.where(mask_neg, threshold_neg, quantized)
+
+        return quantized
+
+    # Store original shape
+    ori_x_shape = x.size()
+    x = x.reshape(-1, ori_x_shape[-1])
+
+    if not skip_quantize:
+        # Quantize input (deterministic)
+        x_quantized = _cpu_noisy_quantize(
+            x, x_min, x_max, q_levels, quant_mode="det", seed=q_seed
+        )
+
+        # Quantize weight (deterministic with optional LUT min)
+        w_quantized = _cpu_noisy_quantize(
+            weight,
+            w_min,
+            w_max,
+            q_levels,
+            lut_min=w_lut_min,
+            quant_mode="det",
+            seed=q_seed,
+        )
+    else:
+        x_quantized = x
+        w_quantized = weight
+
+    # Perform matrix multiplication: x @ weight.T
+    output = torch.matmul(x_quantized, w_quantized.T)
+
+    if not skip_quantize:
+        # Quantize output (random)
+        output = _cpu_noisy_quantize(
+            output, o_min, o_max, q_levels, quant_mode="rand", seed=q_seed
+        )
+
+    # Add bias if provided
+    if bias is not None:
+        output = output + bias
+
+    # Restore original shape
+    output = output.reshape(ori_x_shape[:-1] + (weight.shape[0],))
+
+    # Update seed (only increment if quantization was applied and random mode was used)
+    q_seed = q_seed + 1 if not skip_quantize else q_seed
+
+    return output, q_seed
 
 
 def _ot_qlinear_backward(ctx, *grad_outputs):
