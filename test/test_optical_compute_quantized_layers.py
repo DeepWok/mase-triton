@@ -7,31 +7,33 @@ from mase_triton.utils.deps import all_packages_are_available
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)
-DEVICE = "cuda"
 
 logger = test_logger.getChild(f"{__name__}")
 
 
-def test_optical_compute_quantized_linear_simple():
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_linear_simple(device):
     in_features = 32
     out_features = 8
     fc1 = OpticalTransformerLinear(
         in_features=in_features,
         out_features=out_features * 2,
         bias=False,
-        device=DEVICE,
+        device=device,
         dtype=torch.float32,
     )
     fc2 = OpticalTransformerLinear(
         in_features=out_features * 2,
         out_features=out_features,
         bias=False,
-        device=DEVICE,
+        device=device,
         dtype=torch.float32,
     )
     fc1.train()
     fc2.train()
-    x = torch.rand(2, 8, in_features, device=DEVICE, dtype=torch.float32)
+    x = torch.rand(2, 8, in_features, device=device, dtype=torch.float32)
     x = x * 2 - 1
     x.requires_grad_()
     x = fc1(x)
@@ -44,15 +46,18 @@ def test_optical_compute_quantized_linear_simple():
     assert torch.all(torch.isfinite(fc1.weight.grad))
 
 
-def test_optical_compute_quantized_linear_forward_error():
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_linear_forward_error(device):
     in_features = 32
     out_features = 8
     fc_baseline = torch.nn.Linear(in_features, out_features, bias=False)
     fc_optical = OpticalTransformerLinear.from_linear(fc_baseline)
-    x = torch.rand(8, in_features, device=DEVICE, dtype=torch.float32)
+    x = torch.rand(8, in_features, device=device, dtype=torch.float32)
     x = x * 2 - 1
-    fc_baseline.to(DEVICE)
-    fc_optical.to(DEVICE)
+    fc_baseline.to(device)
+    fc_optical.to(device)
     with torch.no_grad():
         y_baseline = fc_baseline(x)
         y_optical = fc_optical(x)
@@ -61,9 +66,3 @@ def test_optical_compute_quantized_linear_forward_error():
         assert error < 0.05
     logger.info(f"ErrorNorm/Norm: {error}")
     logger.info("Test passed: output is close to reference")
-
-
-if __name__ == "__main__":
-    set_logging_verbosity("info")
-    test_optical_compute_quantized_linear_simple()
-    test_optical_compute_quantized_linear_forward_error()

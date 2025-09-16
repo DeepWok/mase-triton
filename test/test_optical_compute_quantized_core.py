@@ -7,13 +7,15 @@ from mase_triton.utils.deps import all_packages_are_available
 from mase_triton.utils.train_utils import set_seed
 
 set_seed(42)
-DEVICE = "cuda"
 
 logger = test_logger.getChild(f"{__name__}")
 
 
-def test_optical_compute_quantized_forward_fn_simple():
-    x = torch.rand(8, device=DEVICE, dtype=torch.float32)
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_forward_fn_simple(device):
+    x = torch.rand(8, device=device, dtype=torch.float32)
     x = x * 2 - 1
     quant_levels = 256
     min_val = -1.0
@@ -36,14 +38,17 @@ def test_optical_compute_quantized_forward_fn_simple():
     logger.info("Test passed: output is close to input")
 
 
-def test_optical_compute_quantized_backward_fn_simple():
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_backward_fn_simple(device):
     quant_levels = 256
     min_val = -1.0
     max_val = 1.0
     lut_min = 0.01
     seed = 0
 
-    x = torch.rand(256, device=DEVICE, dtype=torch.float32)
+    x = torch.rand(256, device=device, dtype=torch.float32)
     x = x * 2 - 1
     x.requires_grad_()
     out, seed_out = OTFunctions.quantize_fn(
@@ -61,10 +66,13 @@ def test_optical_compute_quantized_backward_fn_simple():
     logger.info("Identical gradients test passed")
 
 
-def test_optical_compute_quantized_linear_forward_fn_skip_quantize():
-    x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16)
-    w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16)
-    bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_linear_forward_fn_skip_quantize(device):
+    x = torch.rand(16, 32, device=device, dtype=torch.float16)
+    w = torch.rand(8, 32, device=device, dtype=torch.float16)
+    bias = torch.rand(8, device=device, dtype=torch.float16)
 
     out_ref = torch.matmul(x, w.T) + bias if bias is not None else torch.matmul(x, w.T)
     out, _ = OTFunctions.quantized_linear_fn(
@@ -88,10 +96,13 @@ def test_optical_compute_quantized_linear_forward_fn_skip_quantize():
     logger.info("Test passed: skip_quantize=True")
 
 
-def test_optical_compute_quantized_linear_forward_fn():
-    x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
-    w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
-    bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_linear_forward_fn(device):
+    x = torch.rand(16, 32, device=device, dtype=torch.float16) * 2 - 1
+    w = torch.rand(8, 32, device=device, dtype=torch.float16) * 2 - 1
+    bias = torch.rand(8, device=device, dtype=torch.float16)
 
     out_ref = torch.matmul(x, w.T) + bias if bias is not None else torch.matmul(x, w.T)
     out, _ = OTFunctions.quantized_linear_fn(
@@ -116,10 +127,13 @@ def test_optical_compute_quantized_linear_forward_fn():
     logger.info("Test passed: output is close to reference")
 
 
-def test_optical_compute_quantized_linear_backward_fn():
-    x = torch.rand(16, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
-    w = torch.rand(8, 32, device=DEVICE, dtype=torch.float16) * 2 - 1
-    bias = torch.rand(8, device=DEVICE, dtype=torch.float16)
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_linear_backward_fn(device):
+    x = torch.rand(16, 32, device=device, dtype=torch.float16) * 2 - 1
+    w = torch.rand(8, 32, device=device, dtype=torch.float16) * 2 - 1
+    bias = torch.rand(8, device=device, dtype=torch.float16)
     w.requires_grad_()
     x.requires_grad_()
     bias.requires_grad_()
@@ -142,16 +156,19 @@ def test_optical_compute_quantized_linear_backward_fn():
     loss.backward()
     assert torch.allclose(
         x.grad,
-        torch.ones((16, 8), device=DEVICE, dtype=torch.float16) @ w,
+        torch.ones((16, 8), device=device, dtype=torch.float16) @ w,
         atol=1e-2,
         rtol=0.0,
     )
     logger.info("Test passed: x.grad is correct")
 
 
-def test_optical_compute_quantized_bmm_forward_fn_skip_quantize():
-    a = torch.rand(8, 4, 32, 64, device=DEVICE, dtype=torch.float16) * 2 - 1
-    b = torch.rand(8, 4, 64, 16, device=DEVICE, dtype=torch.float16) * 2 - 1
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_bmm_forward_fn_skip_quantize(device):
+    a = torch.rand(8, 4, 32, 64, device=device, dtype=torch.float16) * 2 - 1
+    b = torch.rand(8, 4, 64, 16, device=device, dtype=torch.float16) * 2 - 1
 
     out, _ = OTFunctions.quantized_matmul_fn(
         a,
@@ -175,9 +192,12 @@ def test_optical_compute_quantized_bmm_forward_fn_skip_quantize():
     logger.info("Test passed: skip_quantize=True")
 
 
-def test_optical_compute_quantized_bmm_forward_fn():
-    a = torch.rand(8, 4, 32, 64, device=DEVICE, dtype=torch.float16) * 2 - 1
-    b = torch.rand(8, 4, 64, 16, device=DEVICE, dtype=torch.float16) * 2 - 1
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_bmm_forward_fn(device):
+    a = torch.rand(8, 4, 32, 64, device=device, dtype=torch.float16) * 2 - 1
+    b = torch.rand(8, 4, 64, 16, device=device, dtype=torch.float16) * 2 - 1
     out_ref = torch.matmul(a, b)
 
     out, _ = OTFunctions.quantized_matmul_fn(
@@ -203,9 +223,12 @@ def test_optical_compute_quantized_bmm_forward_fn():
     logger.info("Test passed: output is close to reference")
 
 
-def test_optical_compute_quantized_bmm_backward_fn():
-    a = torch.rand(8, 4, 32, 64, device=DEVICE, dtype=torch.float16) * 2 - 1
-    b = torch.rand(8, 4, 64, 16, device=DEVICE, dtype=torch.float16) * 2 - 1
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_bmm_backward_fn(device):
+    a = torch.rand(8, 4, 32, 64, device=device, dtype=torch.float16) * 2 - 1
+    b = torch.rand(8, 4, 64, 16, device=device, dtype=torch.float16) * 2 - 1
     a.requires_grad_()
     b.requires_grad_()
 
@@ -240,7 +263,10 @@ def test_optical_compute_quantized_bmm_backward_fn():
     not all_packages_are_available(("tqdm",)),
     reason="Requires tqdm and datasets",
 )
-def test_optical_bmm_toy_training():
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_bmm_toy_training(device):
     from tqdm import tqdm
 
     batch_size = 32
@@ -249,16 +275,15 @@ def test_optical_bmm_toy_training():
     n_heads = 4
     head_dim = 8
     dtype = torch.float32
-    device = DEVICE
 
     def gen_data(batch_size, seq_len, in_features):
         a = (
-            torch.rand((batch_size * seq_len, in_features), device=DEVICE, dtype=dtype)
+            torch.rand((batch_size * seq_len, in_features), device=device, dtype=dtype)
             * 2
             - 1
         )
         b = (
-            torch.rand((batch_size * seq_len, in_features), device=DEVICE, dtype=dtype)
+            torch.rand((batch_size * seq_len, in_features), device=device, dtype=dtype)
             * 2
             - 1
         )
@@ -320,16 +345,3 @@ def test_optical_bmm_toy_training():
         optimizer.step()
 
     logger.info("Test passed: back propagation completed successfully")
-
-
-if __name__ == "__main__":
-    set_logging_verbosity("info")
-    # test_optical_compute_quantized_forward_fn_simple()
-    test_optical_compute_quantized_backward_fn_simple()
-    # test_optical_compute_quantized_linear_forward_fn_skip_quantize()
-    # test_optical_compute_quantized_linear_forward_fn()
-    test_optical_compute_quantized_linear_backward_fn()
-    # test_optical_compute_quantized_bmm_forward_fn_skip_quantize()
-    # test_optical_compute_quantized_bmm_forward_fn()
-    test_optical_compute_quantized_bmm_backward_fn()
-    # test_optical_bmm_toy_training()
