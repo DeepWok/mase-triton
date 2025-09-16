@@ -9,6 +9,7 @@ from torch import Tensor
 
 from ....about import PACKAGE_NAME
 from ....dtype import TORCH_DTYPE_TO_TRITON
+from . import fake
 
 
 def _get_autotune_configs_ot_quantize_forward_kernel():
@@ -164,51 +165,9 @@ def _ot_quantize_forward_fn_cpu(
     CPU implementation of optical transformer quantization using PyTorch APIs.
     Equivalent to the Triton kernel _ot_quantize_forward_kernel.
     """
-    # Set random seed for reproducibility if using stochastic quantization
-    if quant_mode == "rand":
-        torch.manual_seed(seed)
-
-    # Step 1: Clamp input to [min_val, max_val]
-    x_clamped = torch.clamp(x, min_val, max_val)
-
-    # Step 2: Normalize to [0, 1] range
-    range_val = max_val - min_val
-    eps = 1e-8
-    x_normalized = (x_clamped - min_val) / (range_val + eps)
-
-    # Step 3: Scale to quantization levels [0, quant_levels-1]
-    x_scaled = x_normalized * (quant_levels - 1)
-
-    # Step 4: Quantization (deterministic or stochastic)
-    if quant_mode == "det":
-        # Deterministic: simple rounding
-        x_quantized = torch.round(x_scaled)
-    else:  # quant_mode == "rand"
-        # Stochastic: add uniform noise in [-0.5, 0.5] then round
-        torch.manual_seed(seed)
-        noise = torch.rand_like(x_scaled) - 0.5
-        x_quantized = torch.round(x_scaled + noise)
-
-    # Step 5: Dequantization - scale back to original range
-    x_dequantized = (x_quantized / (quant_levels - 1)) * range_val + min_val
-
-    # Step 6: Apply LUT minimum thresholding if enabled
-    if lut_min is not None:
-        # For positive values: if x < lut_min * max_val and x > 0, set to lut_min * max_val
-        pos_threshold = lut_min * max_val
-        pos_mask = (x_dequantized < pos_threshold) & (x_dequantized > 0.0)
-        x_dequantized = torch.where(pos_mask, pos_threshold, x_dequantized)
-
-        # For negative values: if x > -lut_min * |min_val| and x < 0, set to -lut_min * |min_val|
-        neg_threshold = -lut_min * abs(min_val)
-        neg_mask = (x_dequantized > neg_threshold) & (x_dequantized < 0.0)
-        x_dequantized = torch.where(neg_mask, neg_threshold, x_dequantized)
-
-    # Update seed for next call if using stochastic quantization
-    if quant_mode == "rand":
-        seed += 1
-
-    return x_dequantized, seed
+    return fake._quantize_forward_fn_fake(
+        x, seed, quant_levels, min_val, max_val, lut_min, quant_mode
+    )
 
 
 ot_quantize_fn.register_autograd(

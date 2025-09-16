@@ -5,6 +5,7 @@ from torch import Tensor
 
 from ....about import PACKAGE_NAME
 from ....dtype import TORCH_DTYPE_TO_TRITON
+from . import fake
 from .utils import _noisy_quantize
 
 
@@ -331,105 +332,20 @@ def _ot_qmatmul_fn_cpu(
 ) -> tuple[Tensor, int]:
     """CPU implementation of the optical transformer quantized matrix multiplication function."""
 
-    def _cpu_noisy_quantize(
-        tensor: Tensor,
-        min_val: float,
-        max_val: float,
-        quant_levels: int,
-        lut_min: float | None = None,
-        quant_mode: str = "det",
-        seed: int = 0,
-    ) -> Tensor:
-        """CPU implementation of noisy quantization equivalent to _noisy_quantize in Triton."""
-        # Clamp values to [min_val, max_val]
-        quantized = torch.clamp(tensor, min_val, max_val)
-
-        # Normalize to [0, 1]
-        range_val = max_val - min_val
-        eps = 1e-8
-        quantized = (quantized - min_val) / (range_val + eps)
-
-        # Scale to [0, quant_levels-1]
-        quantized = quantized * (quant_levels - 1)
-
-        # Apply quantization
-        if quant_mode == "det":
-            # Deterministic: round to nearest integer
-            quantized = torch.round(quantized)
-        else:
-            # Random: add noise then round
-            # Set random seed for reproducibility in random mode
-            if quant_mode == "rand":
-                torch.manual_seed(seed)
-            noise = torch.rand_like(quantized) - 0.5
-            quantized = torch.round(quantized + noise)
-
-        # Scale back to original range
-        quantized = quantized / (quant_levels - 1)
-        quantized = quantized * range_val + min_val
-
-        # Apply LUT min if enabled
-        if lut_min is not None:
-            # For positive values: if 0 < x < lut_min * max_val, set to lut_min * max_val
-            threshold_pos = lut_min * max_val
-            mask_pos = (quantized > 0.0) & (quantized < threshold_pos)
-            quantized = torch.where(mask_pos, threshold_pos, quantized)
-
-            # For negative values: if -lut_min * |min_val| < x < 0, set to -lut_min * |min_val|
-            threshold_neg = -lut_min * abs(min_val)
-            mask_neg = (quantized < 0.0) & (quantized > threshold_neg)
-            quantized = torch.where(mask_neg, threshold_neg, quantized)
-
-        return quantized
-
-    # Store original shape
-    orig_a_shape = a.size()
-
-    # Extract dimensions
-    M, K = a.shape[-2:]
-    K2, N = b.shape[-2:]
-    assert K == K2, "K dimension must match"
-
-    # Reshape for batch processing
-    a_reshaped = a.reshape(-1, M, K)
-    b_reshaped = b.reshape(-1, K, N)
-
-    if not skip_quantize:
-        # Quantize input matrix a (deterministic mode, no LUT min)
-        a_quantized = _cpu_noisy_quantize(
-            a_reshaped, a_min, a_max, q_levels, quant_mode="det", seed=q_seed
-        )
-
-        # Quantize input matrix b (deterministic mode, with optional LUT min)
-        b_quantized = _cpu_noisy_quantize(
-            b_reshaped,
-            b_min,
-            b_max,
-            q_levels,
-            lut_min=b_lut_min if b_lut_min is not None else None,
-            quant_mode="det",
-            seed=q_seed,
-        )
-    else:
-        a_quantized = a_reshaped
-        b_quantized = b_reshaped
-
-    # Perform batch matrix multiplication: a @ b
-    output = torch.matmul(a_quantized, b_quantized)
-
-    if not skip_quantize:
-        # Quantize output (random mode, no LUT min)
-        output = _cpu_noisy_quantize(
-            output, o_min, o_max, q_levels, quant_mode="rand", seed=q_seed
-        )
-
-    # Restore original shape
-    output = output.reshape(orig_a_shape[:-2] + (M, N))
-
-    # Update seed (increment if quantization was applied and random mode was used for output)
-    q_seed = q_seed + 1 if not skip_quantize else q_seed
-
-    return output, q_seed
+    return fake._qmatmul_fn_fake(
+        a,
+        b,
+        a_min,
+        a_max,
+        b_min,
+        b_max,
+        b_lut_min,
+        o_min,
+        o_max,
+        q_levels,
+        q_seed,
+        skip_quantize,
+    )
 
 
 def _ot_qmatmul_backward(ctx, *grad_outputs):
