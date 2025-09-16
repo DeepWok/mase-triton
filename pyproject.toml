@@ -39,6 +39,8 @@
 [tool.hatch]
     build.dev-mode-dirs=["src"]
     build.targets.sdist.include=["/src", "/test"]
+    build.targets.sdist.force-include={ "src/mase_triton/VERSION"="src/mase_triton/VERSION" }
+    build.targets.wheel.force-include={ "src/mase_triton/VERSION"="mase_triton/VERSION" }
 
     [tool.hatch.version]
         source="versioningit"
