@@ -101,6 +101,10 @@ def _get_autotune_configs_ot_qlinear_forward_kernel():
 # *: Transformers & Accelerate DDP does not work with this Triton kernel
 
 
+@triton.autotune(
+    configs=_get_autotune_configs_ot_qlinear_forward_kernel(),
+    key=["M", "N", "K"],
+)
 @triton.jit
 def _ot_qlinear_forward_kernel(
     a_ptr,
@@ -289,10 +293,6 @@ def ot_qlinear_fn(
             INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[x.dtype],
             SKIP_QUANTIZE=skip_quantize,
             USE_BIAS=bias is not None,
-            BLOCK_SIZE_M=128,
-            BLOCK_SIZE_N=128,
-            BLOCK_SIZE_K=64,
-            GROUP_SIZE_M=8,
         )
 
     output = output.reshape(ori_x_shape[:-1] + (N,))
