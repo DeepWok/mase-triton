@@ -95,6 +95,10 @@ def _get_autotune_configs_ot_qmatmul_kernel():
 
 
 # *: Transformers & Accelerate DDP does not work with this Triton kernel
+@triton.autotune(
+    configs=_get_autotune_configs_ot_qmatmul_kernel(),
+    key=["M", "N", "K"],
+)
 @triton.jit
 def _ot_qmatmul_forward_kernel(
     a_ptr,
@@ -286,10 +290,6 @@ def ot_qmatmul_fn(
             INPUT_DTYPE=TORCH_DTYPE_TO_TRITON[a.dtype],
             ENABLE_LUT_MIN=b_lut_min is not None,
             SKIP_QUANTIZE=skip_quantize,
-            BLOCK_SIZE_M=128,
-            BLOCK_SIZE_N=128,
-            BLOCK_SIZE_K=64,
-            GROUP_SIZE_M=8,
         )
     output = output.reshape(orig_a_shape[:-2] + (M, N))
     q_seed += 1 if not skip_quantize else q_seed
