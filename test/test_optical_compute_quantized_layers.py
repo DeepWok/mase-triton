@@ -66,3 +66,31 @@ def test_optical_compute_quantized_linear_forward_error(device):
         assert error < 0.05
     logger.info(f"ErrorNorm/Norm: {error}")
     logger.info("Test passed: output is close to reference")
+
+
+@pytest.mark.parametrize(
+    "device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+)
+def test_optical_compute_quantized_linear_non_contiguous_input(device):
+    # Regression: RoBERTa's classification head feeds the linear a sliced
+    # `features[:, 0, :]`, which is non-contiguous. The kernel asserts
+    # contiguity, so the layer wrapper must contiguous-ize before dispatch.
+    in_features = 32
+    out_features = 8
+    fc = OpticalTransformerLinear(
+        in_features=in_features,
+        out_features=out_features,
+        bias=True,
+        device=device,
+        dtype=torch.float32,
+    )
+    features = torch.rand(2, 4, in_features, device=device, dtype=torch.float32)
+    x = features[:, 0, :]
+    assert not x.is_contiguous()
+    with torch.no_grad():
+        fc.eval()
+        y_eval = fc(x)
+        fc.train()
+        y_train = fc(x)
+    assert y_eval.shape == (2, out_features)
+    assert y_train.shape == (2, out_features)
