@@ -63,6 +63,8 @@ class OpticalTransformerLinear(torch.nn.Linear):
         if self.bypass:
             return super().forward(x)
 
+        x = x.contiguous()
+
         if self.training:
             with torch.no_grad():
                 x_min_max = optical_transformer_update_qstats(
