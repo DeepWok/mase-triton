@@ -182,6 +182,31 @@ def test_random_bitflip_fn_backward():
             assert torch.all((out != 0) == (x.grad == 1.0))
 
 
+@torch.no_grad()
+def test_random_bitflip_forward_large_seed_no_overflow():
+    """Regression: seeds that exceed int32_max used to raise OverflowError on
+    the Triton kernel launch (signed-int32 kernel arg). They should now be
+    masked into the int32 range, both at launch time and on return."""
+    x = torch.zeros(16, device=DEVICE, dtype=torch.bfloat16)
+    int32_max = 0x7FFFFFFF
+    # seed_exp sits just below int32_max so the post-call increment crosses it;
+    # seed_frac is already > int32_max, which previously crashed at launch.
+    seed_exp = int32_max - 1
+    seed_frac = (1 << 31) + 1234
+    out, new_seed_exp, new_seed_frac = RBFunctions.random_bitflip_fn(
+        x,
+        exp_halves=4,
+        frac_halves=4,
+        seed_exp=seed_exp,
+        seed_frac=seed_frac,
+        zero_out_threshold=None,
+    )
+    assert out.shape == x.shape
+    assert out.dtype == x.dtype
+    assert 0 <= new_seed_exp <= int32_max
+    assert 0 <= new_seed_frac <= int32_max
+
+
 if __name__ == "__main__":
     set_logging_verbosity("info")
     torch.set_printoptions(linewidth=120)
@@ -189,3 +214,4 @@ if __name__ == "__main__":
     test_random_bitflip_forward_fully_activated()
     test_random_bitflip_forward_zero_outed()
     test_random_bitflip_fn_backward()
+    test_random_bitflip_forward_large_seed_no_overflow()
