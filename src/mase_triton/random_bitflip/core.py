@@ -8,6 +8,10 @@ from torch import Tensor
 from ..about import PACKAGE_NAME
 from ..dtype import TORCH_DTYPE_TO_TRITON
 
+# Seeds are forwarded to Triton kernels as signed int32; mask user/accumulated
+# seeds into [0, 2**31 - 1] so launching never raises OverflowError.
+_INT32_SEED_MASK = 0x7FFFFFFF
+
 
 def calculate_flip_probability(prob_halves: int | None) -> float | None:
     if prob_halves is None:
@@ -282,6 +286,10 @@ def random_bitflip_fn(
     skip_exp_flip = exp_halves is None
     skip_frac_flip = frac_halves is None
     enable_zero_out = zero_out_threshold is not None
+    # Keep seeds in the int32 range Triton expects, including the post-call
+    # returned values, so long stateful loops don't accumulate past 2**31 - 1.
+    seed_exp = seed_exp & _INT32_SEED_MASK
+    seed_frac = seed_frac & _INT32_SEED_MASK
     if skip_exp_flip and skip_frac_flip:
         if enable_zero_out:
             output = torch.where(x.abs() < zero_out_threshold, x, 0.0)
@@ -315,9 +323,9 @@ def random_bitflip_fn(
                 FRAC_PHILOX_N_ROUNDS=_get_philox_n_rounds(frac_halves),
             )
         if not skip_exp_flip:
-            seed_exp = seed_exp + math.ceil(exp_halves / 4)
+            seed_exp = (seed_exp + math.ceil(exp_halves / 4)) & _INT32_SEED_MASK
         if not skip_frac_flip:
-            seed_frac = seed_frac + math.ceil(frac_halves / 4)
+            seed_frac = (seed_frac + math.ceil(frac_halves / 4)) & _INT32_SEED_MASK
 
         return output, seed_exp, seed_frac
 
@@ -432,6 +440,8 @@ def _random_bitflip_backward(
     skip_exp_flip = exp_halves is None
     skip_frac_flip = frac_halves is None
     enable_zero_out = zero_out_threshold is not None
+    seed_exp = seed_exp & _INT32_SEED_MASK
+    seed_frac = seed_frac & _INT32_SEED_MASK
 
     if skip_exp_flip and skip_frac_flip:
         if enable_zero_out:
